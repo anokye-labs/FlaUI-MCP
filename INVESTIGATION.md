@@ -118,15 +118,35 @@ coreclr!RunMain
 
 **Meaning**: This is a **UIA provider callback thread**. The external UIA client (FlaUInspect) sends a navigation/find request. UIAutomationCore processes it on its own IO thread and calls into WinUI's automation peer code. During `GetAPChildrenCount` → `OnCreateAutomationPeer` → `GetPeerPrivate`, WinUI tries to insert into a peer tracking hash set that has a NULL internal state.
 
-**Root Cause**: The `DXamlCore` peer tracking `std::unordered_set<DependencyObject*>` is either:
-1. Not initialized on the UIA callback thread (thread-affinity bug — the set was created on the UI thread)
-2. Being concurrently modified by the UI thread (race condition — no synchronization)
-3. Has been destroyed/moved during a layout or GC cycle while UIA is mid-enumeration (lifetime bug)
+### Root Cause — CONFIRMED
 
-The registers confirm: `rsi = 0x0000000000000070` (the hash set object), `rbx = 0` (null). Accessing `[rsi+0x18]` = reading from address `0x88` which is unmapped → ACCESS_VIOLATION.
+**`DXamlCore::GetCurrent()` returns NULL on the UIA IO thread.**
 
-### Null Pointer Source
-The null pointer is the **hash set object itself** (`std::unordered_set` at offset 0x70 from some parent structure). The hash set's `_List._Myhead._Next` pointer (at offset +0x18 from the set) is being read, but the entire set region is null/uninitialized. This is inside `DXamlCore::GetPeerPrivate` which manages the DependencyObject↔peer mapping.
+The crash is NOT a race condition. It's deterministic:
+
+1. **UIAutomationCore** receives a navigation/find request from an external UIA client (FlaUInspect)
+2. UIAutomationCore dispatches the request on its own **IO thread** (thread 95)
+3. The IO thread calls into `CUIAWindow::Navigate` → `GetAPChildren` → recursive `GetAPChildrenCount` → `OnCreateAutomationPeer` → `GetPeerPrivate`
+4. `GetPeerPrivate` calls `DXamlCore::GetCurrent()` to get the DXamlCore instance
+5. **`DXamlCore::GetCurrent()` uses thread-local storage (TLS) to look up the core for the current thread**
+6. The UIA IO thread was **never initialized** with a DXamlCore — `GetCurrent()` returns `NULL`
+7. `GetPeerPrivate` dereferences `NULL->m_Peers` → `m_Peers` is at offset `0x70` → reads address `0x88` → **ACCESS VIOLATION**
+
+**Proof from registers:**
+- `rsi = 0x70` = `&((DXamlCore*)NULL)->m_Peers` → m_Peers is at offset 0x70 from DXamlCore
+- The disassembly shows: `mov rsi, rcx` (rsi = this = the hash set), then `mov rdx, [rsi+18h]` (read from 0x88)
+- `rdi = 0x0`, `rbp = 0x0`, `rbx = 0x0` — the DXamlCore pointer is NULL throughout the frame
+
+**Why our repro doesn't crash:**
+- Our `UiaCrashTrigger` uses `FindAllChildren`/`TreeWalker` from a separate process
+- These go through a **different code path** in UIAutomationCore that may marshal to the UI thread
+- FlaUInspect uses `IUIAutomationTreeWalker::Navigate` with specific provider-side navigation that hits the `CUIAWindow::Navigate` → `GetAPChildrenCount` path directly on the IO thread
+- The Amplifier's tree may also have a specific depth/structure that triggers deeper recursion through `GetAPChildrenCount` (6 recursive frames in the crash stack)
+
+**Why the current Amplifier code doesn't crash but the old code did:**
+- The new code (PR #17) restructured the visual tree: different NavigationView configuration, new `TitleBar` control, `Frame` content navigation
+- The new tree returns `E_UNEXPECTED` at the `DesktopChildSiteBridge` level, preventing UIA from descending into the content where the crash occurs
+- The old code's tree was structured such that UIA could descend deep enough to trigger `OnCreateAutomationPeer` for a nested element on the IO thread
 
 ### Thread Ownership
 
@@ -150,21 +170,30 @@ This startup crash must be fixed FIRST before we can test the actual UIA enumera
 
 ## Fix Strategy
 
-### Upstream Bug (microsoft/microsoft-ui-xaml)
-The `DXamlCore::GetPeerPrivate` method accesses an `std::unordered_set<DependencyObject*>` on a UIA IO thread without synchronization. The hash set is either uninitialized or concurrently modified by the UI thread. This is a thread-safety bug in the WinUI 3 automation peer infrastructure. It affects any WinUI 3 app with a non-trivial visual tree when an external UIA client enumerates it.
+### The Fix (for microsoft/microsoft-ui-xaml PR)
+`GetPeerPrivate` must null-check `DXamlCore::GetCurrent()` before dereferencing. When called from a UIA IO thread where no DXamlCore is initialized, it should either:
 
-**Evidence for upstream bug filing:**
-- Dump: `C:\dumps\WinUiSample.exe_260315_153428.dmp`
-- Crash at `Microsoft.UI.Xaml.dll` v3.1.8.0 (Windows App SDK 1.8)
-- Thread 95 (UIA IO thread) crashes while UI thread 0 is idle
-- `!analyze -v` bucket: `NULL_CLASS_PTR_READ_c0000005_Microsoft.UI.Xaml.dll!...emplace`
-- Reproducible by hovering FlaUInspect over the NavigationView in the Amplifier app
+1. **Return E_FAIL / null** — the safest fix. If there's no DXamlCore on this thread, peer creation is impossible. Return gracefully instead of crashing.
+2. **Marshal to the UI thread** via `DispatcherQueue` — correct but higher risk/complexity. DXamlCore knows its thread ID (`m_threadId`).
+
+Option 1 is the minimal fix:
+```cpp
+// In DXamlCore::GetPeerPrivate, before accessing m_Peers:
+DXamlCore* pCore = DXamlCore::GetCurrent();
+if (pCore == nullptr)
+{
+    // UIA callback on a thread with no DXamlCore — cannot create peers
+    IFC_RETURN(E_FAIL);
+}
+```
+
+The same null check is needed in `AgCoreCallbacks::CreateManagedPeer` which calls `GetPeerPrivate`.
 
 ### FlaUI-MCP Mitigation (branch: fix/crash-safe-uia)
-Already implemented on `fix/crash-safe-uia` branch:
+Already implemented:
 - Depth-capped tree walk
 - Per-node exception guards around `FindAllChildren()`
-- NavigationView-specific stop (don't recurse into NavigationView subtrees)
+- NavigationView-specific stop
 
 ---
 
