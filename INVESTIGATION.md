@@ -6,9 +6,9 @@
 
 ## Current Status
 
-**Phase**: ROOT CAUSE IDENTIFIED — crash dump captured and fully analyzed
-**Next Action**: File upstream bug on microsoft/microsoft-ui-xaml with full evidence
-**Blockers**: None — root cause is a thread-safety bug in WinUI 3 native code
+**Phase**: ROOT CAUSE IDENTIFIED from dump — independent repro NOT yet achieved
+**Next Action**: Build a standalone app + COM UIA trigger that reproduces the crash without FlaUInspect or Amplifier
+**Blockers**: FlaUI library wraps UIA calls differently than FlaUInspect. Need raw COM `IUIAutomationTreeWalker::GetFirstChildElement` to hit the `CUIAWindow::Navigate` → `GetAPChildrenCount` → `GetPeerPrivate` path on the IO thread. Current UiaCrashTrigger uses FlaUI which doesn't trigger the crash.
 
 ### Root Cause Summary
 **Null pointer dereference in `DXamlCore::GetPeerPrivate`** when a UIA callback thread tries to insert into an `std::unordered_set<DependencyObject*>` whose internal bucket array is NULL. The crash happens on a **UIA IO thread** (thread 95), NOT the UI thread. The UI thread is idle in its message loop (`GetMessageW`). This is a **thread-safety / re-entrancy bug** in the WinUI 3 XAML automation peer infrastructure.
