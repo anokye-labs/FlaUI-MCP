@@ -4,10 +4,11 @@ using FlaUI.Core.AutomationElements;
 using FlaUI.UIA3;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Window = Microsoft.UI.Xaml.Window;
 
 namespace NavViewUiaCrashRepro;
 
-public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
+public sealed partial class MainWindow : Window
 {
     public MainWindow()
     {
