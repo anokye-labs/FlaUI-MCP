@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mcp-windbg": {
+      "command": "uvx",
+      "args": ["mcp-windbg"],
+      "env": {
+        "_NT_SYMBOL_PATH": "SRV*C:\\Symbols*https://msdl.microsoft.com/download/symbols"
+      }
+    }
+  }
+}

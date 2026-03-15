@@ -49,3 +49,9 @@ Desktop.ini
 # Session files
 TestFlaUI/
 *.csx
+
+# Diagnostic artifacts
+*.binlog
+C:\dumps\
+diagnostics/
+

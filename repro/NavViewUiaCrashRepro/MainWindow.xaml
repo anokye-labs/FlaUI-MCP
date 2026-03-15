@@ -1,0 +1,30 @@
+<Window
+    x:Class="NavViewUiaCrashRepro.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="NavView UIA Crash Repro">
+
+    <Grid Padding="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="NavigationView UIA Crash Repro" FontSize="20" Margin="0,0,0,16"/>
+
+        <NavigationView x:Name="NavView" Grid.Row="1"
+                         AutomationProperties.AutomationId="NavView_Main"
+                         IsBackButtonVisible="Collapsed"
+                         IsSettingsVisible="False">
+            <!-- Start empty. Add items programmatically for binary search. -->
+        </NavigationView>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0">
+            <Button Content="Trigger UIA Enumeration"
+                    AutomationProperties.AutomationId="btn_trigger_uia"
+                    Click="TriggerUiaEnumeration_Click"/>
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Ready"/>
+        </StackPanel>
+    </Grid>
+</Window>
