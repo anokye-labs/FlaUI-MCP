@@ -69,7 +69,7 @@ return 0;
 
 static void DumpTree(IUIAutomationTreeWalker walker, IUIAutomationElement el, int depth)
 {
-    if (depth > 10) { Console.WriteLine($"{new string(' ', depth * 2)}..."); return; }
+    if (depth > 2) { Console.WriteLine($"{new string(' ', depth * 2)}..."); return; }
     try
     {
         var name = ""; try { name = el.CurrentName ?? ""; } catch { }
@@ -90,7 +90,7 @@ static void DumpTree(IUIAutomationTreeWalker walker, IUIAutomationElement el, in
 
 static void WalkTree(IUIAutomationTreeWalker walker, IUIAutomationElement el, int depth)
 {
-    if (depth > 15) return;
+    if (depth > 2) return;
     try
     {
         _ = el.CurrentName;
@@ -104,3 +104,4 @@ static void WalkTree(IUIAutomationTreeWalker walker, IUIAutomationElement el, in
     }
     catch { }
 }
+
