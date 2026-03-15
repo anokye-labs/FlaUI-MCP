@@ -6,58 +6,79 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="32"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Custom title bar -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Padding="16,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="&#xE700;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                       VerticalAlignment="Center" Margin="0,0,12,0"/>
-            <TextBlock Grid.Column="1" Text="NavView UIA Crash Repro"
-                       VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"/>
+        <!-- Custom title bar (matches crashing Amplifier version exactly) -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Background="Transparent">
+            <TextBlock x:Name="AppTitleText"
+                       Text="Repro"
+                       VerticalAlignment="Center"
+                       Margin="16,0,0,0"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       AutomationProperties.Name="Repro title bar"/>
         </Grid>
 
-        <NavigationView x:Name="NavView" Grid.Row="1"
-                         AutomationProperties.AutomationId="NavView_Main"
-                         IsBackButtonVisible="Collapsed"
-                         IsSettingsVisible="False">
+        <!-- NavigationView with static items (matches crashing Amplifier version) -->
+        <NavigationView x:Name="NavView"
+                        Grid.Row="1"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="True"
+                        PaneTitle="Chats"
+                        SelectionChanged="NavView_SelectionChanged"
+                        AutomationProperties.Name="Main navigation">
+
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Home" Tag="home">
+                <NavigationViewItem Content="Refactor auth module"
+                                   Tag="chat1"
+                                   AutomationProperties.Name="Chat: Refactor auth module">
                     <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Home"/>
+                        <FontIcon Glyph="&#xE8BD;"/>
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Browse" Tag="browse">
+                <NavigationViewItem Content="Debug CI pipeline"
+                                   Tag="chat2"
+                                   AutomationProperties.Name="Chat: Debug CI pipeline">
                     <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Library"/>
+                        <FontIcon Glyph="&#xE8BD;"/>
                     </NavigationViewItem.Icon>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge Value="3"/>
-                    </NavigationViewItem.InfoBadge>
-                    <NavigationViewItem.MenuItems>
-                        <NavigationViewItem Content="Sub Item 1" Tag="sub1"/>
-                        <NavigationViewItem Content="Sub Item 2" Tag="sub2"/>
-                    </NavigationViewItem.MenuItems>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Settings" Tag="settings">
+                <NavigationViewItem Content="Design API schema"
+                                   Tag="chat3"
+                                   AutomationProperties.Name="Chat: Design API schema">
                     <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Setting"/>
+                        <FontIcon Glyph="&#xE8BD;"/>
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItemSeparator/>
+                <NavigationViewItem Content="New Chat"
+                                   Tag="newchat"
+                                   AutomationProperties.Name="Start new chat">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE710;"/>
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
-        </NavigationView>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="16,8,16,8">
-            <Button Content="Trigger UIA Enumeration"
-                    AutomationProperties.AutomationId="btn_trigger_uia"
-                    Click="TriggerUiaEnumeration_Click"/>
-            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Ready"/>
-        </StackPanel>
+            <!-- Content area -->
+            <Grid Padding="24" AutomationProperties.Name="Chat content area">
+                <StackPanel x:Name="WelcomePanel"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Spacing="8">
+                    <TextBlock x:Name="ContentTitle"
+                               Text="Welcome"
+                               FontSize="28"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="ContentSubtitle"
+                               Text="Select a chat session or start a new one."
+                               FontSize="14"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </NavigationView>
     </Grid>
 </Window>
