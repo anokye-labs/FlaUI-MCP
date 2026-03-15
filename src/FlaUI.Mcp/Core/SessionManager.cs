@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Runtime.InteropServices;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA3;
@@ -6,15 +8,40 @@ using FlaUIApplication = FlaUI.Core.Application;
 namespace PlaywrightWindows.Mcp.Core;
 
 /// <summary>
-/// Manages UI Automation sessions and launched applications
+/// Manages UI Automation sessions and launched applications.
+/// Stores HWNDs (stable) instead of AutomationElement refs (stale after UIA tree changes).
 /// </summary>
 public class SessionManager : IDisposable
 {
     private readonly UIA3Automation _automation;
     private readonly Dictionary<string, FlaUIApplication> _applications = new();
-    private readonly Dictionary<string, Window> _windows = new();
+    private readonly Dictionary<string, IntPtr> _windowHandles = new();
+    private readonly Dictionary<string, string> _windowTitles = new();
     private int _appCounter = 0;
     private int _windowCounter = 0;
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    private const int SW_RESTORE = 9;
 
     public SessionManager()
     {
@@ -25,7 +52,6 @@ public class SessionManager : IDisposable
 
     public (string handle, Window window) LaunchApp(string appPath, string[]? args = null)
     {
-        // Use Process.Start for more reliable launching
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = appPath,
@@ -39,36 +65,29 @@ public class SessionManager : IDisposable
             throw new Exception($"Failed to start process: {appPath}");
         }
         
-        // Wait for the process to be ready
         try
         {
             process.WaitForInputIdle(5000);
         }
         catch { /* Some processes don't support this */ }
         
-        Thread.Sleep(1000); // Extra wait for window to appear
+        Thread.Sleep(1000);
         
-        // Find window by process ID from desktop
         var desktop = _automation.GetDesktop();
         Window? window = null;
         
-        // Try to find by process ID first
         var element = desktop.FindFirstDescendant(cf => cf.ByProcessId(process.Id));
         if (element != null)
         {
             window = element.AsWindow();
         }
         
-        // If not found, the app might have spawned a different process (common for UWP)
-        // Search by waiting for a new window
         if (window == null)
         {
-            // Get window count before
             var existingTitles = new HashSet<string>(
-                _windows.Values.Select(w => w.Title).Where(t => !string.IsNullOrEmpty(t))
+                _windowTitles.Values.Where(t => !string.IsNullOrEmpty(t))
             );
             
-            // Wait and look for new windows
             for (int i = 0; i < 10 && window == null; i++)
             {
                 Thread.Sleep(500);
@@ -78,7 +97,6 @@ public class SessionManager : IDisposable
                     var win = w.AsWindow();
                     if (win != null && !string.IsNullOrEmpty(win.Title))
                     {
-                        // Check if this looks like our app
                         var title = win.Title.ToLowerInvariant();
                         var appName = Path.GetFileNameWithoutExtension(appPath).ToLowerInvariant();
                         if (title.Contains(appName) || !existingTitles.Contains(win.Title))
@@ -114,16 +132,89 @@ public class SessionManager : IDisposable
         return (handle, window);
     }
 
+    /// <summary>
+    /// Register a window by extracting and storing its HWND (stable) and title.
+    /// </summary>
     public string RegisterWindow(Window window)
     {
         var handle = $"w{++_windowCounter}";
-        _windows[handle] = window;
+        var hwnd = window.Properties.NativeWindowHandle.ValueOrDefault;
+        _windowHandles[handle] = new IntPtr(hwnd);
+        try { _windowTitles[handle] = window.Title ?? ""; } catch { _windowTitles[handle] = ""; }
         return handle;
     }
 
+    /// <summary>
+    /// Get a fresh AutomationElement Window from the stored HWND.
+    /// Never returns a cached AutomationElement — always re-fetches.
+    /// </summary>
     public Window? GetWindow(string handle)
     {
-        return _windows.TryGetValue(handle, out var window) ? window : null;
+        if (!_windowHandles.TryGetValue(handle, out var hwnd))
+            return null;
+
+        if (!IsWindow(hwnd))
+            return null;
+
+        try
+        {
+            var element = _automation.FromHandle(hwnd);
+            return element?.AsWindow();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Get the stored HWND for a window handle. Always stable.
+    /// </summary>
+    public IntPtr? GetWindowHwnd(string handle)
+    {
+        return _windowHandles.TryGetValue(handle, out var hwnd) ? hwnd : null;
+    }
+
+    /// <summary>
+    /// Capture a screenshot of a window using its HWND directly.
+    /// Uses GetWindowRect + Graphics.CopyFromScreen — no UIA dependency.
+    /// </summary>
+    public Bitmap? CaptureWindowByHwnd(string handle)
+    {
+        if (!_windowHandles.TryGetValue(handle, out var hwnd))
+            return null;
+
+        if (!IsWindow(hwnd))
+            return null;
+
+        // Restore if minimized
+        if (IsIconic(hwnd))
+            ShowWindow(hwnd, SW_RESTORE);
+
+        if (!GetWindowRect(hwnd, out RECT rect))
+            return null;
+
+        int width = rect.Right - rect.Left;
+        int height = rect.Bottom - rect.Top;
+        if (width <= 0 || height <= 0)
+            return null;
+
+        var bitmap = new Bitmap(width, height);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.CopyFromScreen(rect.Left, rect.Top, 0, 0, new Size(width, height));
+        return bitmap;
+    }
+
+    /// <summary>
+    /// Capture a screenshot of the entire screen.
+    /// </summary>
+    public static Bitmap CaptureScreen()
+    {
+        var bounds = System.Windows.Forms.Screen.PrimaryScreen!.Bounds;
+        var bitmap = new Bitmap(bounds.Width, bounds.Height);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size);
+        return bitmap;
     }
 
     public List<(string handle, string title, string? processName)> ListWindows()
@@ -155,12 +246,17 @@ public class SessionManager : IDisposable
 
     public void FocusWindow(string handle)
     {
-        var window = GetWindow(handle);
-        if (window == null)
-        {
+        if (!_windowHandles.TryGetValue(handle, out var hwnd))
             throw new Exception($"Window not found: {handle}");
-        }
-        window.Focus();
+
+        if (!IsWindow(hwnd))
+            throw new Exception($"Window no longer exists: {handle}");
+
+        // Restore if minimized
+        if (IsIconic(hwnd))
+            ShowWindow(hwnd, SW_RESTORE);
+
+        SetForegroundWindow(hwnd);
     }
 
     public void CloseWindow(string handle)
@@ -171,7 +267,8 @@ public class SessionManager : IDisposable
             throw new Exception($"Window not found: {handle}");
         }
         window.Close();
-        _windows.Remove(handle);
+        _windowHandles.Remove(handle);
+        _windowTitles.Remove(handle);
     }
 
     public void Dispose()
@@ -181,7 +278,8 @@ public class SessionManager : IDisposable
             try { app.Close(); } catch { }
         }
         _applications.Clear();
-        _windows.Clear();
+        _windowHandles.Clear();
+        _windowTitles.Clear();
         _automation.Dispose();
     }
 }

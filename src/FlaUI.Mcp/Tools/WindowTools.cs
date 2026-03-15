@@ -99,9 +99,9 @@ public class FocusWindowTool : ToolBase
             }
             else if (!string.IsNullOrEmpty(title))
             {
-                var (windowHandle, window) = _sessionManager.AttachToWindow(title);
-                window.Focus();
-                return Task.FromResult(TextResult($"Focused window \"{window.Title}\" (handle: {windowHandle})"));
+                var (windowHandle, _) = _sessionManager.AttachToWindow(title);
+                _sessionManager.FocusWindow(windowHandle);
+                return Task.FromResult(TextResult($"Focused window \"{title}\" (handle: {windowHandle})"));
             }
             else
             {

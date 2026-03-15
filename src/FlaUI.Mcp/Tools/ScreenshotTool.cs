@@ -1,3 +1,4 @@
+using System.Drawing.Imaging;
 using System.Text.Json;
 using FlaUI.Core.Capturing;
 using PlaywrightWindows.Mcp.Core;
@@ -5,7 +6,7 @@ using PlaywrightWindows.Mcp.Core;
 namespace PlaywrightWindows.Mcp.Tools;
 
 /// <summary>
-/// Take a screenshot
+/// Take a screenshot using HWND-based capture (no stale UIA dependency).
 /// </summary>
 public class ScreenshotTool : ToolBase
 {
@@ -54,57 +55,68 @@ public class ScreenshotTool : ToolBase
 
         try
         {
-            CaptureImage capture;
+            System.Drawing.Bitmap? bitmap = null;
 
             if (fullScreen)
             {
-                capture = Capture.Screen();
+                bitmap = SessionManager.CaptureScreen();
             }
             else if (!string.IsNullOrEmpty(refId))
             {
+                // Element capture still uses UIA (no HWND alternative for sub-elements)
                 var element = _elementRegistry.GetElement(refId);
                 if (element == null)
                 {
                     return Task.FromResult(ErrorResult($"Element not found: {refId}"));
                 }
-                capture = Capture.Element(element);
+                var capture = Capture.Element(element);
+                using var stream = new MemoryStream();
+                capture.Bitmap.Save(stream, ImageFormat.Png);
+                return Task.FromResult(ImageResult(stream.ToArray(), "image/png"));
             }
             else if (!string.IsNullOrEmpty(handle))
             {
-                var window = _sessionManager.GetWindow(handle);
-                if (window == null)
+                // HWND-based capture — no stale UIA proxy
+                bitmap = _sessionManager.CaptureWindowByHwnd(handle);
+                if (bitmap == null)
                 {
-                    return Task.FromResult(ErrorResult($"Window not found: {handle}"));
+                    return Task.FromResult(ErrorResult($"Window not found or cannot capture: {handle}"));
                 }
-                capture = Capture.Element(window);
             }
             else
             {
-                // Capture foreground window
-                var focusedElement = _sessionManager.Automation.FocusedElement();
-                if (focusedElement == null)
+                // Foreground window — try focused element walk-up, fall back to screen
+                try
                 {
-                    return Task.FromResult(ErrorResult("No focused window found"));
+                    var focusedElement = _sessionManager.Automation.FocusedElement();
+                    if (focusedElement != null)
+                    {
+                        var current = focusedElement;
+                        while (current != null && current.Properties.ControlType.ValueOrDefault != FlaUI.Core.Definitions.ControlType.Window)
+                        {
+                            current = current.Parent;
+                        }
+                        if (current != null)
+                        {
+                            var capture = Capture.Element(current);
+                            using var stream = new MemoryStream();
+                            capture.Bitmap.Save(stream, ImageFormat.Png);
+                            return Task.FromResult(ImageResult(stream.ToArray(), "image/png"));
+                        }
+                    }
+                }
+                catch
+                {
+                    // UIA walk failed — fall back to full screen
                 }
 
-                // Walk up to find the window
-                var current = focusedElement;
-                while (current != null && current.Properties.ControlType.ValueOrDefault != FlaUI.Core.Definitions.ControlType.Window)
-                {
-                    current = current.Parent;
-                }
-
-                if (current == null)
-                {
-                    return Task.FromResult(ErrorResult("Could not find window for focused element"));
-                }
-
-                capture = Capture.Element(current);
+                bitmap = SessionManager.CaptureScreen();
             }
 
-            using var stream = new MemoryStream();
-            capture.Bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-            var imageData = stream.ToArray();
+            using var ms = new MemoryStream();
+            bitmap.Save(ms, ImageFormat.Png);
+            var imageData = ms.ToArray();
+            bitmap.Dispose();
 
             return Task.FromResult(ImageResult(imageData, "image/png"));
         }
