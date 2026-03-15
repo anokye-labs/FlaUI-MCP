@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Definitions;
@@ -5,14 +6,15 @@ using FlaUI.Core.Definitions;
 namespace PlaywrightWindows.Mcp.Core;
 
 /// <summary>
-/// Builds agent-friendly accessibility snapshots from UI Automation trees
+/// Builds agent-friendly accessibility snapshots from UI Automation trees.
+/// Crash-safe: catches COMException/SEHException per node and continues.
 /// </summary>
 public class SnapshotBuilder
 {
     private readonly ElementRegistry _elementRegistry;
     private readonly int _maxDepth;
 
-    public SnapshotBuilder(ElementRegistry elementRegistry, int maxDepth = 10)
+    public SnapshotBuilder(ElementRegistry elementRegistry, int maxDepth = 3)
     {
         _elementRegistry = elementRegistry;
         _maxDepth = maxDepth;
@@ -20,7 +22,6 @@ public class SnapshotBuilder
 
     public string BuildSnapshot(string windowHandle, AutomationElement root)
     {
-        // Clear previous elements for this window
         _elementRegistry.ClearWindow(windowHandle);
 
         var sb = new StringBuilder();
@@ -32,28 +33,29 @@ public class SnapshotBuilder
     {
         if (depth > _maxDepth) return;
 
-        // Skip elements with no meaningful content
         var name = GetElementName(element);
         var role = GetElementRole(element);
-        
-        // Skip some noise elements, but keep elements with names or important roles
+
         if (ShouldSkipElement(element, name, role)) return;
 
-        // Register element and get ref
         var refId = _elementRegistry.Register(windowHandle, element);
-
-        // Build the line
         var indent = new string(' ', depth * 2);
         var line = BuildElementLine(element, refId, name, role);
         sb.AppendLine($"{indent}- {line}");
 
-        // Process children
+        // Process children with crash safety per child
         try
         {
             var children = element.FindAllChildren();
             foreach (var child in children)
             {
-                BuildElementSnapshot(sb, windowHandle, child, depth + 1);
+                try
+                {
+                    BuildElementSnapshot(sb, windowHandle, child, depth + 1);
+                }
+                catch (COMException) { }
+                catch (SEHException) { }
+                catch { }
             }
         }
         catch
