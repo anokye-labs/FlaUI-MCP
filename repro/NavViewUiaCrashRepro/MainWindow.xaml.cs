@@ -10,10 +10,23 @@ namespace NavViewUiaCrashRepro;
 
 public sealed partial class MainWindow : Window
 {
+    private readonly DispatcherTimer _autoTrigger = new();
+
     public MainWindow()
     {
         this.InitializeComponent();
         this.Title = "NavView UIA Crash Repro";
+
+        // Auto-trigger UIA walk after 3 seconds so no external UIA
+        // interaction is needed (external UIA would itself trigger the crash).
+        _autoTrigger.Interval = TimeSpan.FromSeconds(3);
+        _autoTrigger.Tick += (_, _) =>
+        {
+            _autoTrigger.Stop();
+            TriggerUiaEnumeration_Click(this, new RoutedEventArgs());
+        };
+        _autoTrigger.Start();
+        Console.WriteLine("[REPRO] Auto-trigger armed — UIA walk in 3 seconds...");
     }
 
     private async void TriggerUiaEnumeration_Click(object sender, RoutedEventArgs e)
