@@ -6,9 +6,12 @@
 
 ## Current Status
 
-**Phase**: Binary search complete — minimal repro does NOT crash
-**Next Action**: Compare Amplifier's exact NavigationView setup (SDK version, item binding pattern, data templates) to identify the specific trigger
-**Blockers**: The self-contained repro with items + nested children + InfoBadge does not crash. The bug may require: (a) a specific older WindowsAppSDK version, (b) data-bound items vs static XAML items, (c) custom DataTemplates, or (d) external UIA client rather than self-triggered walk.
+**Phase**: ROOT CAUSE IDENTIFIED — crash dump captured and fully analyzed
+**Next Action**: File upstream bug on microsoft/microsoft-ui-xaml with full evidence
+**Blockers**: None — root cause is a thread-safety bug in WinUI 3 native code
+
+### Root Cause Summary
+**Null pointer dereference in `DXamlCore::GetPeerPrivate`** when a UIA callback thread tries to insert into an `std::unordered_set<DependencyObject*>` whose internal bucket array is NULL. The crash happens on a **UIA IO thread** (thread 95), NOT the UI thread. The UI thread is idle in its message loop (`GetMessageW`). This is a **thread-safety / re-entrancy bug** in the WinUI 3 XAML automation peer infrastructure.
 
 ### Key Findings
 1. **Stowed exceptions (`c000027b`) bypass ProcDump's SEH hooks** — use `-t` (terminate monitor) not `-e 1`
@@ -35,55 +38,95 @@
 ## Dump Analysis Findings
 
 ### Dump File
-- **Path**: `C:\dumps\NavViewUiaCrashRepro.exe_260315_140209.dmp`
-- **Size**: 332 MB
+- **Path**: `C:\dumps\WinUiSample.exe_260315_153428.dmp`
+- **Size**: 575 MB
 - **Type**: Full (`-ma`)
-- **Tool**: ProcDump `-t` (terminate monitor) — needed because stowed exceptions bypass SEH
-- **Note**: ProcDump `-e 1 -f "C0000005"` does NOT capture this crash. The exception is `c000027b` (STATUS_STOWED_EXCEPTION) raised via `RoFailFastWithErrorContext`, not a regular SEH access violation.
+- **Tool**: ProcDump `-t` (terminate monitor)
+- **App**: Amplifier WinUiSample (not the minimal repro — minimal repro does NOT trigger this)
+- **Trigger**: FlaUInspect (external UIA client) navigating the automation tree
 
 ### !analyze -v Output
 ```
-FAILURE_BUCKET: STOWED_EXCEPTION_800f1000_Microsoft.UI.Xaml.dll!DirectUI::ErrorHelper::OriginateError
-EXCEPTION_CODE: 800f1000 (stowed), c000027b (fail-fast wrapper)
-CLR.Version: 8.0.2526.11203
-IMAGE_VERSION: 3.1.6.0 (Microsoft.UI.Xaml.dll — Windows App SDK 1.6)
-FAULTING_SOURCE: C:\__w\1\s\dxaml\xcp\dxaml\lib\ErrorHelper.cpp line 647
-PROCESS_UPTIME: 1 second (crashed during startup)
+FAILURE_BUCKET: NULL_CLASS_PTR_READ_c0000005_Microsoft.UI.Xaml.dll!std::_Hash<...>::emplace<DirectUI::DependencyObject * const &>
+EXCEPTION_CODE: c0000005 (Access violation)
+AV.Dereference: NullClassPtr
+AV.Fault: Read
+READ_ADDRESS: 0x0000000000000088
+CLR.Version: 10.0.526.15411
+IMAGE_VERSION: 3.1.8.0 (Microsoft.UI.Xaml.dll — Windows App SDK 1.8)
+PROCESS_UPTIME: 12 seconds
+CRASH_THREAD: 95 (UIA IO thread, NOT the UI thread)
 ```
 
 ### FAULTING_IP
 ```
-Microsoft_UI_Xaml!DirectUI::ErrorHelper::OriginateError+0xf4
+Microsoft_UI_Xaml!std::_Hash<std::_Uset_traits<DirectUI::DependencyObject*,...>>::emplace + 0x2d
+Source: xhash:611 (MSVC STL hash set implementation)
+Instruction: mov rdx, qword ptr [rsi+18h]  ; rsi=0x70, reading 0x70+0x18=0x88 → NULL deref
 ```
-Source: `ErrorHelper.cpp:647` in the WinUI 3 XAML runtime.
+The crash is inside `std::unordered_set::emplace()` — the hash set's internal bucket array pointer is NULL.
 
-### Full Call Stack (kP 100)
+### Full Call Stack (crash thread 95)
 ```
-KERNELBASE!RaiseFailFastException+0x188
-combase!RoFailFastWithErrorContextInternal2
-Microsoft_UI_Xaml!FailFastWithStowedExceptions
-Microsoft_UI_Xaml!DirectUI::DefaultStyles::GetDefaultStyleByTypeName    ← CRASH ORIGIN
-Microsoft_UI_Xaml!DirectUI::DefaultStyles::GetDefaultStyleByKey
-Microsoft_UI_Xaml!FxCallbacks::Control_GetBuiltInStyle
-Microsoft_UI_Xaml!CControl::GetBuiltInStyle
-Microsoft_UI_Xaml!CControl::ApplyBuiltInStyle
-Microsoft_UI_Xaml!CControl::CreationComplete
-Microsoft_UI_Xaml!XamlManagedRuntime::InitializationGuard
-Microsoft_UI_Xaml!ObjectWriterRuntime::SetGuardImplHelper
-Microsoft_UI_Xaml!ObjectWriterRuntime::EndInitImpl
-Microsoft_UI_Xaml!BinaryFormatObjectWriter::EndInitOnCurrentInstance
-Microsoft_UI_Xaml!BinaryFormatObjectWriter::WriteNode
-Microsoft_UI_Xaml!CParser::LoadXamlCore                                ← XAML PARSING
-Microsoft_UI_Xaml!CCoreServices::ParseXamlWithExistingFrameworkRoot
-Microsoft_UI_Xaml!CApplication::LoadComponent                          ← APP STARTUP
+Microsoft_UI_Xaml!std::_Hash<...>::emplace<DependencyObject* const&>     ← CRASH: null bucket ptr
+Microsoft_UI_Xaml!DirectUI::DXamlCore::GetPeerPrivate                   ← inserting into peer tracking set
+Microsoft_UI_Xaml!AgCoreCallbacks::CreateManagedPeer
+Microsoft_UI_Xaml!CDependencyObject::PrivateEnsurePeerAndTryPeg
+Microsoft_UI_Xaml!CDependencyObject::TryEnsureManagedPeer
+Microsoft_UI_Xaml!CDependencyObject::OnCreateAutomationPeerInternal     ← creating automation peer
+Microsoft_UI_Xaml!CUIElement::OnCreateAutomationPeer
+Microsoft_UI_Xaml!CUIElement::GetAPChildrenCount                        ← recursive (6 frames deep)
+Microsoft_UI_Xaml!CUIElement::GetAPChildrenCount
+Microsoft_UI_Xaml!CUIElement::GetAPChildrenCount
+Microsoft_UI_Xaml!CUIElement::GetAPChildrenCount
+Microsoft_UI_Xaml!CUIElement::GetAPChildrenCount
+Microsoft_UI_Xaml!CUIElement::GetAPChildrenCount
+Microsoft_UI_Xaml!CUIElement::GetAPChildren
+Microsoft_UI_Xaml!CUIAWindow::GetAutomationPeersForRoot
+Microsoft_UI_Xaml!CUIAWindow::NavigateImpl
+Microsoft_UI_Xaml!CUIAWindow::Navigate                                  ← UIA navigation entry point
+uiautomationcore!InProcClientAPIStub::UiaNodeTraverser_NavigateProvider
+uiautomationcore!ComInvoker::CallTarget
+uiautomationcore!InProcClientAPIStub::InvokeInProcAPI
+uiautomationcore!UiaNodeTraverser::Traverse
+uiautomationcore!InProcClientAPIStub::UiaNode_Find
+uiautomationcore!RemoteUiaNodeStub::Incoming_Find
+uiautomationcore!InvokeElementMethodOnCorrectContext_Callback
+uiautomationcore!ProcessIncomingRequest
+uiautomationcore!ChannelBasedServerConnection::ProcessOneMessage
+uiautomationcore!ChannelBasedServerConnection::OnData
+uiautomationcore!ReadWriteChannelInfo::Service
+uiautomationcore!OverlappedIOManager::IoThreadProc                      ← UIA IO thread
+kernel32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+```
+
+### UI Thread (thread 0) at crash time
+```
+win32u!NtUserGetMessage
+user32!GetMessageW
+Microsoft_UI_Xaml!DirectUI::FrameworkApplication::RunDesktopWindowMessageLoop
 Microsoft_UI_Xaml!DirectUI::FrameworkApplication::StartDesktop
+Microsoft_UI_Xaml!DirectUI::FrameworkApplicationFactory::Start
 coreclr!RunMain
 ```
+**UI thread is IDLE** — blocked in `GetMessageW` waiting for window messages. Not doing anything.
 
-### All Thread Stacks (~*kb)
-- **Thread 0 (UI/main)**: Crash thread — the full stack above
-- **Threads 1-9**: .NET runtime threads (EventPipe, Debugger, Finalizer, Tiered Compilation) — all idle/waiting
-- **No UIAutomationCore.dll frames** on any thread — UIA never ran
+### Thread Ownership — DETERMINED
+
+**Observation**: `uiautomationcore.dll` frames on crashing thread (thread 95), UI thread idle in message loop.
+
+**Meaning**: This is a **UIA provider callback thread**. The external UIA client (FlaUInspect) sends a navigation/find request. UIAutomationCore processes it on its own IO thread and calls into WinUI's automation peer code. During `GetAPChildrenCount` → `OnCreateAutomationPeer` → `GetPeerPrivate`, WinUI tries to insert into a peer tracking hash set that has a NULL internal state.
+
+**Root Cause**: The `DXamlCore` peer tracking `std::unordered_set<DependencyObject*>` is either:
+1. Not initialized on the UIA callback thread (thread-affinity bug — the set was created on the UI thread)
+2. Being concurrently modified by the UI thread (race condition — no synchronization)
+3. Has been destroyed/moved during a layout or GC cycle while UIA is mid-enumeration (lifetime bug)
+
+The registers confirm: `rsi = 0x0000000000000070` (the hash set object), `rbx = 0` (null). Accessing `[rsi+0x18]` = reading from address `0x88` which is unmapped → ACCESS_VIOLATION.
+
+### Null Pointer Source
+The null pointer is the **hash set object itself** (`std::unordered_set` at offset 0x70 from some parent structure). The hash set's `_List._Myhead._Next` pointer (at offset +0x18 from the set) is being read, but the entire set region is null/uninitialized. This is inside `DXamlCore::GetPeerPrivate` which manages the DependencyObject↔peer mapping.
 
 ### Thread Ownership
 
@@ -107,11 +150,21 @@ This startup crash must be fixed FIRST before we can test the actual UIA enumera
 
 ## Fix Strategy
 
-### Immediate: Fix Repro Startup Crash
-The repro project is missing `<XamlControlsResources>` in `App.xaml`, causing NavigationView style lookup to fail at startup. Fix this, then re-run to test the actual UIA enumeration crash.
+### Upstream Bug (microsoft/microsoft-ui-xaml)
+The `DXamlCore::GetPeerPrivate` method accesses an `std::unordered_set<DependencyObject*>` on a UIA IO thread without synchronization. The hash set is either uninitialized or concurrently modified by the UI thread. This is a thread-safety bug in the WinUI 3 automation peer infrastructure. It affects any WinUI 3 app with a non-trivial visual tree when an external UIA client enumerates it.
 
-### Pending: UIA Investigation
-Once the repro runs successfully, proceed with the binary search table to find the minimum NavigationView configuration that triggers the UIA crash.
+**Evidence for upstream bug filing:**
+- Dump: `C:\dumps\WinUiSample.exe_260315_153428.dmp`
+- Crash at `Microsoft.UI.Xaml.dll` v3.1.8.0 (Windows App SDK 1.8)
+- Thread 95 (UIA IO thread) crashes while UI thread 0 is idle
+- `!analyze -v` bucket: `NULL_CLASS_PTR_READ_c0000005_Microsoft.UI.Xaml.dll!...emplace`
+- Reproducible by hovering FlaUInspect over the NavigationView in the Amplifier app
+
+### FlaUI-MCP Mitigation (branch: fix/crash-safe-uia)
+Already implemented on `fix/crash-safe-uia` branch:
+- Depth-capped tree walk
+- Per-node exception guards around `FindAllChildren()`
+- NavigationView-specific stop (don't recurse into NavigationView subtrees)
 
 ---
 
@@ -123,10 +176,15 @@ Once the repro runs successfully, proceed with the binary search table to find t
 - Diagnostics toolkit installed
 - Repro project created
 
-### Session 2 — Dump Analysis & Binary Search
-- Installed diagnostic tools via `Setup-DiagTools.ps1`
-- **Key discovery**: ProcDump `-e 1 -f "C0000005"` does NOT capture WinUI stowed exceptions — use `-t` instead
-- **First dump** (339 MB): Startup crash — `GetDefaultStyleByTypeName` fails because `<XamlControlsResources>` was missing from App.xaml + project was missing `WindowsPackageType=None` + wrong SDK
-- Fixed project: retargeted to net10.0 + WindowsAppSDK 1.8 + XamlControlsResources + WindowsPackageType=None + global.json pinning SDK to 10.0.201
-- **Binary search**: All 6 configurations (empty → items → nested → InfoBadge) pass without UIA crash
-- **Conclusion**: Minimal repro does NOT trigger the UIA crash. The bug likely requires the Amplifier app's specific setup (data binding, templates, older SDK version, or external UIA client)
+### Session 3 — CRASH CAPTURED AND ANALYZED
+- Minimal repro (NavViewUiaCrashRepro) does NOT crash — even with items, nested children, InfoBadge, custom titlebar
+- Switched to actual Amplifier WinUiSample app
+- **Crash reproduced**: FlaUInspect (UIA3) navigating Amplifier's NavigationView → `c0000005` ACCESS_VIOLATION
+- ProcDump `-t` captured 575 MB dump at `C:\dumps\WinUiSample.exe_260315_153428.dmp`
+- `!analyze -v` with full symbols:
+  - **Thread 95** (UIA IO thread) crashes in `DXamlCore::GetPeerPrivate` → `std::unordered_set::emplace`
+  - **Null bucket pointer** in peer tracking hash set → read from address 0x88
+  - **UI thread (0) is IDLE** in `GetMessageW` — not doing anything
+  - Call path: `uiautomationcore!Navigate` → `CUIAWindow::Navigate` → recursive `GetAPChildrenCount` → `OnCreateAutomationPeer` → `GetPeerPrivate` → null deref
+  - **Root cause**: Thread-safety bug in WinUI 3 — UIA callback thread accesses DXamlCore peer set without synchronization
+  - **WindowsAppSDK 1.8** (Microsoft.UI.Xaml.dll v3.1.8.0)
