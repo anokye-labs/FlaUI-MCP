@@ -17,6 +17,10 @@ public sealed partial class MainWindow : Window
         this.InitializeComponent();
         this.Title = "NavView UIA Crash Repro";
 
+        // Custom title bar — matches Amplifier pattern
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+
         // Auto-trigger UIA walk after 3 seconds so no external UIA
         // interaction is needed (external UIA would itself trigger the crash).
         _autoTrigger.Interval = TimeSpan.FromSeconds(3);

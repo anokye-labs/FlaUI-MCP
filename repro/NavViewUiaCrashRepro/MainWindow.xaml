@@ -4,14 +4,24 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="NavView UIA Crash Repro">
 
-    <Grid Padding="16">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="NavigationView UIA Crash Repro" FontSize="20" Margin="0,0,0,16"/>
+        <!-- Custom title bar -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Padding="16,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="&#xE700;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                       VerticalAlignment="Center" Margin="0,0,12,0"/>
+            <TextBlock Grid.Column="1" Text="NavView UIA Crash Repro"
+                       VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"/>
+        </Grid>
 
         <NavigationView x:Name="NavView" Grid.Row="1"
                          AutomationProperties.AutomationId="NavView_Main"
@@ -43,7 +53,7 @@
             </NavigationView.MenuItems>
         </NavigationView>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,16,0,0">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="16,8,16,8">
             <Button Content="Trigger UIA Enumeration"
                     AutomationProperties.AutomationId="btn_trigger_uia"
                     Click="TriggerUiaEnumeration_Click"/>
