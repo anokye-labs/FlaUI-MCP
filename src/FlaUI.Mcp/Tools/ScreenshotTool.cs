@@ -67,7 +67,11 @@ public class ScreenshotTool : ToolBase
                 {
                     return Task.FromResult(ErrorResult($"Element not found: {refId}"));
                 }
-                capture = Capture.Element(element);
+                var elHwnd = element.Properties.NativeWindowHandle.ValueOrDefault;
+                if (elHwnd != 0)
+                    capture = Capture.ByHandle(new IntPtr(elHwnd));
+                else
+                    capture = Capture.Element(element);
             }
             else if (!string.IsNullOrEmpty(handle))
             {
@@ -76,7 +80,11 @@ public class ScreenshotTool : ToolBase
                 {
                     return Task.FromResult(ErrorResult($"Window not found: {handle}"));
                 }
-                capture = Capture.Element(window);
+                var winHwnd = new IntPtr(window.Properties.NativeWindowHandle.ValueOrDefault);
+                if (winHwnd != IntPtr.Zero)
+                    capture = Capture.ByHandle(winHwnd);
+                else
+                    capture = Capture.Element(window);
             }
             else
             {
@@ -99,7 +107,11 @@ public class ScreenshotTool : ToolBase
                     return Task.FromResult(ErrorResult("Could not find window for focused element"));
                 }
 
-                capture = Capture.Element(current);
+                var fgHwnd = new IntPtr(current.Properties.NativeWindowHandle.ValueOrDefault);
+                if (fgHwnd != IntPtr.Zero)
+                    capture = Capture.ByHandle(fgHwnd);
+                else
+                    capture = Capture.Element(current);
             }
 
             using var stream = new MemoryStream();
