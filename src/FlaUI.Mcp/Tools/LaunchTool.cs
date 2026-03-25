@@ -20,9 +20,6 @@ public class LaunchTool
         [Description("Path to executable or UWP app ID (e.g., 'calc.exe', 'notepad.exe', 'C:\\\\Program Files\\\\MyApp\\\\app.exe')")] string app,
         [Description("Optional command line arguments")] string[]? args = null)
     {
-        if (string.IsNullOrEmpty(app))
-            throw new InvalidOperationException("Missing required argument: app");
-
         var (handle, window) = _sessionManager.LaunchApp(app, args);
         return $"Launched {app}\nWindow handle: {handle}\nTitle: {window.Title}";
     }

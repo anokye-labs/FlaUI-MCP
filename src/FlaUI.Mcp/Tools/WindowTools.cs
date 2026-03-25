@@ -9,7 +9,10 @@ public class ListWindowsTool
 {
     private readonly SessionManager _sessionManager;
 
-    public ListWindowsTool(SessionManager sessionManager) { _sessionManager = sessionManager; }
+    public ListWindowsTool(SessionManager sessionManager)
+    {
+        _sessionManager = sessionManager;
+    }
 
     [McpServerTool(Name = "windows_list_windows"), Description(
         "List all open windows with their handles, titles, and process names. " +
@@ -17,9 +20,13 @@ public class ListWindowsTool
     public string Execute()
     {
         var windows = _sessionManager.ListWindows();
-        if (windows.Count == 0) return "No windows found";
 
-        var lines = windows.Select(w => $"- {w.handle}: \"{w.title}\" ({w.processName ?? "unknown"})");
+        if (windows.Count == 0)
+            return "No windows found";
+
+        var lines = windows.Select(w =>
+            $"- {w.handle}: \"{w.title}\" ({w.processName ?? "unknown"})");
+
         return string.Join("\n", lines);
     }
 }
@@ -29,9 +36,13 @@ public class FocusWindowTool
 {
     private readonly SessionManager _sessionManager;
 
-    public FocusWindowTool(SessionManager sessionManager) { _sessionManager = sessionManager; }
+    public FocusWindowTool(SessionManager sessionManager)
+    {
+        _sessionManager = sessionManager;
+    }
 
-    [McpServerTool(Name = "windows_focus"), Description("Bring a window to the foreground and give it focus.")]
+    [McpServerTool(Name = "windows_focus"), Description(
+        "Bring a window to the foreground and give it focus.")]
     public string Execute(
         [Description("Window handle from windows_list_windows or windows_launch")] string? handle = null,
         [Description("Window title (alternative to handle). Finds first window containing this text.")] string? title = null)
@@ -59,9 +70,13 @@ public class CloseWindowTool
 {
     private readonly SessionManager _sessionManager;
 
-    public CloseWindowTool(SessionManager sessionManager) { _sessionManager = sessionManager; }
+    public CloseWindowTool(SessionManager sessionManager)
+    {
+        _sessionManager = sessionManager;
+    }
 
-    [McpServerTool(Name = "windows_close"), Description("Close a window.")]
+    [McpServerTool(Name = "windows_close"), Description(
+        "Close a window.")]
     public string Execute(
         [Description("Window handle to close")] string handle)
     {

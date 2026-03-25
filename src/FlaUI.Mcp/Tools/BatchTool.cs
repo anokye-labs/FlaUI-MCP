@@ -1,4 +1,5 @@
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
 using FlaUI.Mcp.Core;
@@ -26,12 +27,9 @@ public class BatchTool
         "Execute multiple actions in a single call. Much faster than individual calls. " +
         "Supports click, type, fill, wait, and snapshot actions. Returns results for each action.")]
     public string Execute(
-        [Description("List of actions to execute in order (click/type/fill/wait/snapshot)")] JsonElement actions,
+        [Description("Array of action objects. Each must have 'action' property (click/type/fill/wait/snapshot) plus action-specific params (ref, text, value, ms, handle).")] JsonElement actions,
         [Description("Stop executing if an action fails (default: true)")] bool stopOnError = true)
     {
-        if (actions.ValueKind != JsonValueKind.Array)
-            throw new InvalidOperationException("actions must be a JSON array");
-
         var results = new List<string>();
         var actionList = actions.EnumerateArray().ToList();
 
@@ -68,25 +66,30 @@ public class BatchTool
     private string ExecuteClick(JsonElement action)
     {
         var refId = action.TryGetProperty("ref", out var refProp) ? refProp.GetString() : null;
-        if (string.IsNullOrEmpty(refId)) return "Missing ref";
+        if (string.IsNullOrEmpty(refId))
+            return "Missing ref";
 
         var element = _elementRegistry.GetElement(refId);
-        if (element == null) return $"Element not found: {refId}";
+        if (element == null)
+            return $"Element not found: {refId}";
 
         var elementName = element.Properties.Name.ValueOrDefault ?? refId;
 
+        // Try Invoke pattern first
         if (element.Patterns.Invoke.IsSupported)
         {
             element.Patterns.Invoke.Pattern.Invoke();
             return $"Invoked {elementName}";
         }
 
+        // Try Toggle pattern
         if (element.Patterns.Toggle.IsSupported)
         {
             element.Patterns.Toggle.Pattern.Toggle();
             return $"Toggled {elementName}";
         }
 
+        // Fall back to mouse click
         var clickPoint = element.GetClickablePoint();
         Mouse.Click(clickPoint);
         return $"Clicked {elementName}";
@@ -95,13 +98,15 @@ public class BatchTool
     private string ExecuteType(JsonElement action)
     {
         var text = action.TryGetProperty("text", out var textProp) ? textProp.GetString() : null;
-        if (string.IsNullOrEmpty(text)) return "Missing text";
+        if (string.IsNullOrEmpty(text))
+            return "Missing text";
 
         var refId = action.TryGetProperty("ref", out var refProp) ? refProp.GetString() : null;
         if (!string.IsNullOrEmpty(refId))
         {
             var element = _elementRegistry.GetElement(refId);
-            if (element == null) return $"Element not found: {refId}";
+            if (element == null)
+                return $"Element not found: {refId}";
             element.Focus();
             Thread.Sleep(30);
         }
@@ -115,10 +120,12 @@ public class BatchTool
         var refId = action.TryGetProperty("ref", out var refProp) ? refProp.GetString() : null;
         var value = action.TryGetProperty("value", out var valProp) ? valProp.GetString() : null;
 
-        if (string.IsNullOrEmpty(refId) || value == null) return "Missing ref or value";
+        if (string.IsNullOrEmpty(refId) || value == null)
+            return "Missing ref or value";
 
         var element = _elementRegistry.GetElement(refId);
-        if (element == null) return $"Element not found: {refId}";
+        if (element == null)
+            return $"Element not found: {refId}";
 
         if (element.Patterns.Value.IsSupported)
         {
@@ -126,6 +133,7 @@ public class BatchTool
             return $"Filled with \"{value}\"";
         }
 
+        // Fallback: select all + type
         element.Focus();
         Thread.Sleep(30);
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
@@ -149,17 +157,19 @@ public class BatchTool
         if (!string.IsNullOrEmpty(handle))
         {
             window = _sessionManager.GetWindow(handle);
-            if (window == null) return $"Window not found: {handle}";
+            if (window == null)
+                return $"Window not found: {handle}";
         }
         else
         {
+            // Get focused window
             var focusedElement = _sessionManager.Automation.FocusedElement();
             if (focusedElement != null)
             {
                 var current = focusedElement;
                 while (current != null)
                 {
-                    if (current.Properties.ControlType.ValueOrDefault == FlaUI.Core.Definitions.ControlType.Window)
+                    if (current.Properties.ControlType.ValueOrDefault == ControlType.Window)
                     {
                         window = current.AsWindow();
                         handle = _sessionManager.RegisterWindow(window);
@@ -170,7 +180,9 @@ public class BatchTool
             }
         }
 
-        if (window == null) return "No window found";
+        if (window == null)
+            return "No window found";
+
         var snapshot = _snapshotBuilder.BuildSnapshot(handle!, window);
         return $"\n{snapshot}";
     }

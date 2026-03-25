@@ -1,4 +1,5 @@
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.Mcp.Core;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -24,7 +25,7 @@ public class SnapshotTool
         "that can be used with windows_click, windows_type, etc. This is the primary tool for " +
         "understanding window contents - use it before interacting with elements.")]
     public string Execute(
-        [Description("Window handle from windows_launch or windows_list_windows. If omitted, uses the most recently launched window.")] string? handle = null)
+        [Description("Window handle from windows_launch or windows_list_windows. If omitted, uses the focused window.")] string? handle = null)
     {
         Window? window = null;
 
@@ -36,14 +37,16 @@ public class SnapshotTool
         }
         else
         {
+            // Get the foreground/focused window
             var focusedElement = _sessionManager.Automation.FocusedElement();
 
             if (focusedElement != null)
             {
+                // Walk up to find the window
                 var current = focusedElement;
                 while (current != null)
                 {
-                    if (current.Properties.ControlType.ValueOrDefault == FlaUI.Core.Definitions.ControlType.Window)
+                    if (current.Properties.ControlType.ValueOrDefault == ControlType.Window)
                     {
                         window = current.AsWindow();
                         break;
@@ -53,12 +56,14 @@ public class SnapshotTool
             }
 
             if (window == null)
-                throw new InvalidOperationException("No window specified and no focused window found. Use windows_list_windows to see available windows.");
+                throw new InvalidOperationException(
+                    "No window specified and no focused window found. " +
+                    "Use windows_list_windows to see available windows.");
 
+            // Register this window
             handle = _sessionManager.RegisterWindow(window);
         }
 
-        var snapshot = _snapshotBuilder.BuildSnapshot(handle!, window);
-        return snapshot;
+        return _snapshotBuilder.BuildSnapshot(handle!, window);
     }
 }

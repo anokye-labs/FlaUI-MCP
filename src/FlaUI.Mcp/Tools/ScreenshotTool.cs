@@ -1,4 +1,5 @@
 using FlaUI.Core.Capturing;
+using FlaUI.Core.Definitions;
 using FlaUI.Mcp.Core;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -21,9 +22,9 @@ public class ScreenshotTool
     [McpServerTool(Name = "windows_screenshot"), Description(
         "Take a screenshot of a window or specific element. Returns the image as base64-encoded PNG.")]
     public IList<ContentBlock> Execute(
-        [Description("Window handle. If omitted, captures the foreground window.")] string? handle = null,
+        [Description("Capture the entire screen (default: false)")] bool fullScreen = false,
         [Description("Element ref to capture. If omitted, captures the whole window.")] string? @ref = null,
-        [Description("Capture the entire screen (default: false)")] bool fullScreen = false)
+        [Description("Window handle. If omitted, captures the foreground window.")] string? handle = null)
     {
         CaptureImage capture;
 
@@ -51,13 +52,17 @@ public class ScreenshotTool
         }
         else
         {
+            // Capture foreground window
             var focusedElement = _sessionManager.Automation.FocusedElement();
             if (focusedElement == null)
                 throw new InvalidOperationException("No focused window found");
 
+            // Walk up to find the window
             var current = focusedElement;
-            while (current != null && current.Properties.ControlType.ValueOrDefault != FlaUI.Core.Definitions.ControlType.Window)
+            while (current != null && current.Properties.ControlType.ValueOrDefault != ControlType.Window)
+            {
                 current = current.Parent;
+            }
 
             if (current == null)
                 throw new InvalidOperationException("Could not find window for focused element");
@@ -69,15 +74,11 @@ public class ScreenshotTool
 
         using var stream = new MemoryStream();
         capture.Bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-        var imageData = stream.ToArray();
+        var imageBytes = stream.ToArray();
 
         return new List<ContentBlock>
         {
-            new ImageContentBlock
-            {
-                Data = Convert.ToBase64String(imageData),
-                MimeType = "image/png"
-            }
+            ImageContentBlock.FromBytes(imageBytes, "image/png")
         };
     }
 }
