@@ -50,13 +50,17 @@ $wsbConfig = @"
 </Configuration>
 "@
 
-$sandboxResult = $wsbConfig | wsb start --config - --raw | ConvertFrom-Json
+$tempWsb = Join-Path $env:TEMP "flaui-mcp-sandbox.wsb"
+$wsbConfig | Set-Content $tempWsb -Encoding UTF8
+
+$sandboxResult = wsb start --config $tempWsb --raw | ConvertFrom-Json
 $sandboxId = $sandboxResult.Id
+Remove-Item $tempWsb -Force -ErrorAction SilentlyContinue
 Write-Host "Sandbox started with ID: $sandboxId"
 
 # Step 3: Launch FlaUI-MCP inside sandbox
 Write-Host "Launching FlaUI-MCP on port $Port inside sandbox..."
-wsb exec --id $sandboxId -c "C:\FlaUI-MCP\FlaUI.Mcp.exe --port $Port" -r ExistingLogin
+wsb exec --id $sandboxId --command "C:\FlaUI-MCP\FlaUI.Mcp.exe --port $Port" --run-as ExistingLogin
 
 # Step 4: Get sandbox IP
 $ipResult = wsb ip --id $sandboxId --raw | ConvertFrom-Json
