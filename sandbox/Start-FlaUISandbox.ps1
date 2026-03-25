@@ -110,6 +110,12 @@ $mcpConfig | Add-Member -NotePropertyName "windows-automation-sandbox" -NoteProp
     url = $url
 } -Force
 
+# Ensure .amplifier directory exists (new Amplifier installs may not have it yet)
+$mcpDir = Split-Path $McpJsonPath -Parent
+if (-not (Test-Path $mcpDir)) {
+    New-Item -ItemType Directory -Force -Path $mcpDir | Out-Null
+}
+
 $mcpConfig | ConvertTo-Json -Depth 10 | Set-Content $McpJsonPath -Encoding UTF8
 Write-Host "Added 'windows-automation-sandbox' entry pointing to $url"
 

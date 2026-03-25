@@ -1,3 +1,8 @@
+<!--
+  Manual-launch config: double-click to open Windows Sandbox for ad-hoc use.
+  Note: HostFolder must be updated to match your local clone path.
+  Start-FlaUISandbox.ps1 generates its own config dynamically and does not use this file.
+-->
 <Configuration>
   <MappedFolders>
     <MappedFolder>
