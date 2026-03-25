@@ -67,7 +67,9 @@ public class ScreenshotTool : ToolBase
                 {
                     return Task.FromResult(ErrorResult($"Element not found: {refId}"));
                 }
+#pragma warning disable CS0618
                 capture = Capture.Element(element);
+#pragma warning restore CS0618
             }
             else if (!string.IsNullOrEmpty(handle))
             {
@@ -76,7 +78,9 @@ public class ScreenshotTool : ToolBase
                 {
                     return Task.FromResult(ErrorResult($"Window not found: {handle}"));
                 }
+#pragma warning disable CS0618
                 capture = Capture.Element(window);
+#pragma warning restore CS0618
             }
             else
             {
@@ -99,7 +103,9 @@ public class ScreenshotTool : ToolBase
                     return Task.FromResult(ErrorResult("Could not find window for focused element"));
                 }
 
+#pragma warning disable CS0618
                 capture = Capture.Element(current);
+#pragma warning restore CS0618
             }
 
             using var stream = new MemoryStream();
