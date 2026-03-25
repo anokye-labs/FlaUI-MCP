@@ -132,4 +132,4 @@ Write-Host "=== Sandbox Ready ==="
 Write-Host "  Sandbox ID: $sandboxId"
 Write-Host "  FlaUI-MCP:  $url"
 Write-Host "  mcp.json:   $McpJsonPath"
-Write-Host "  To stop:    .\Stop-FlaUISandbox.ps1"
+Write-Host '  To stop:    .\Stop-FlaUISandbox.ps1'
