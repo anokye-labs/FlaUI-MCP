@@ -49,3 +49,9 @@ Desktop.ini
 # Session files
 TestFlaUI/
 *.csx
+
+# Sandbox runtime state
+sandbox/.sandbox-state.json
+
+# Published binaries
+publish/
