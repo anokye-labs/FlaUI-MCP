@@ -1,180 +1,79 @@
-using System.Text.Json;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
 using FlaUI.Mcp.Core;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 
 namespace FlaUI.Mcp.Tools;
 
-/// <summary>
-/// Type text into an element
-/// </summary>
-public class TypeTool : ToolBase
+[McpServerToolType]
+public class TypeTool
 {
     private readonly ElementRegistry _elementRegistry;
 
-    public TypeTool(ElementRegistry elementRegistry)
-    {
-        _elementRegistry = elementRegistry;
-    }
+    public TypeTool(ElementRegistry elementRegistry) { _elementRegistry = elementRegistry; }
 
-    public override string Name => "windows_type";
-
-    public override string Description => 
+    [McpServerTool(Name = "windows_type"), Description(
         "Type text into an element. The element will be focused first. " +
-        "Use this for typing without clearing existing content. Use windows_fill to replace content.";
-
-    public override object InputSchema => new
+        "Use this for typing without clearing existing content. Use windows_fill to replace content.")]
+    public string Execute(
+        [Description("Text to type")] string text,
+        [Description("Element ref from windows_snapshot (e.g., 'w1e5'). If omitted, types to currently focused element.")] string? @ref = null,
+        [Description("Press Enter after typing (default: false)")] bool submit = false)
     {
-        type = "object",
-        properties = new
+        if (!string.IsNullOrEmpty(@ref))
         {
-            @ref = new
-            {
-                type = "string",
-                description = "Element ref from windows_snapshot (e.g., 'w1e5'). If omitted, types to currently focused element."
-            },
-            text = new
-            {
-                type = "string",
-                description = "Text to type"
-            },
-            submit = new
-            {
-                type = "boolean",
-                description = "Press Enter after typing (default: false)"
-            }
-        },
-        required = new[] { "text" }
-    };
-
-    public override Task<McpToolResult> ExecuteAsync(JsonElement? arguments)
-    {
-        var text = GetStringArgument(arguments, "text");
-        if (text == null)
-        {
-            return Task.FromResult(ErrorResult("Missing required argument: text"));
+            var element = _elementRegistry.GetElement(@ref);
+            if (element == null)
+                throw new InvalidOperationException($"Element not found: {@ref}. Run windows_snapshot to refresh element refs.");
+            element.Focus();
+            Thread.Sleep(50);
         }
 
-        var refId = GetStringArgument(arguments, "ref");
-        var submit = GetBoolArgument(arguments, "submit", false);
+        Keyboard.Type(text);
+        if (submit) Keyboard.Press(VirtualKeyShort.ENTER);
 
-        try
-        {
-            // Focus element if ref provided
-            if (!string.IsNullOrEmpty(refId))
-            {
-                var element = _elementRegistry.GetElement(refId);
-                if (element == null)
-                {
-                    return Task.FromResult(ErrorResult($"Element not found: {refId}. Run windows_snapshot to refresh element refs."));
-                }
-
-                element.Focus();
-                Thread.Sleep(50); // Small delay to ensure focus
-            }
-
-            // Type the text
-            Keyboard.Type(text);
-
-            if (submit)
-            {
-                Keyboard.Press(VirtualKeyShort.ENTER);
-            }
-
-            var target = string.IsNullOrEmpty(refId) ? "focused element" : refId;
-            var action = submit ? "Typed and submitted" : "Typed";
-            return Task.FromResult(TextResult($"{action} \"{text}\" into {target}"));
-        }
-        catch (Exception ex)
-        {
-            return Task.FromResult(ErrorResult($"Failed to type: {ex.Message}"));
-        }
+        var target = string.IsNullOrEmpty(@ref) ? "focused element" : @ref;
+        var action = submit ? "Typed and submitted" : "Typed";
+        return $"{action} \"{text}\" into {target}";
     }
 }
 
-/// <summary>
-/// Fill (clear and type) an element
-/// </summary>
-public class FillTool : ToolBase
+[McpServerToolType]
+public class FillTool
 {
     private readonly ElementRegistry _elementRegistry;
 
-    public FillTool(ElementRegistry elementRegistry)
+    public FillTool(ElementRegistry elementRegistry) { _elementRegistry = elementRegistry; }
+
+    [McpServerTool(Name = "windows_fill"), Description(
+        "Clear and fill a text field with new value. Prefers Value pattern for reliability.")]
+    public string Execute(
+        [Description("Element ref from windows_snapshot (e.g., 'w1e5')")] string @ref,
+        [Description("Value to fill")] string value)
     {
-        _elementRegistry = elementRegistry;
-    }
-
-    public override string Name => "windows_fill";
-
-    public override string Description => 
-        "Clear and fill a text field with new value. Prefers Value pattern for reliability.";
-
-    public override object InputSchema => new
-    {
-        type = "object",
-        properties = new
-        {
-            @ref = new
-            {
-                type = "string",
-                description = "Element ref from windows_snapshot (e.g., 'w1e5')"
-            },
-            value = new
-            {
-                type = "string",
-                description = "Value to fill"
-            }
-        },
-        required = new[] { "ref", "value" }
-    };
-
-    public override Task<McpToolResult> ExecuteAsync(JsonElement? arguments)
-    {
-        var refId = GetStringArgument(arguments, "ref");
-        var value = GetStringArgument(arguments, "value");
-
-        if (string.IsNullOrEmpty(refId))
-        {
-            return Task.FromResult(ErrorResult("Missing required argument: ref"));
-        }
-        if (value == null)
-        {
-            return Task.FromResult(ErrorResult("Missing required argument: value"));
-        }
-
-        var element = _elementRegistry.GetElement(refId);
+        var element = _elementRegistry.GetElement(@ref);
         if (element == null)
-        {
-            return Task.FromResult(ErrorResult($"Element not found: {refId}. Run windows_snapshot to refresh element refs."));
-        }
+            throw new InvalidOperationException($"Element not found: {@ref}. Run windows_snapshot to refresh element refs.");
 
-        try
-        {
-            var elementName = element.Properties.Name.ValueOrDefault ?? refId;
+        var elementName = element.Properties.Name.ValueOrDefault ?? @ref;
 
-            // Try Value pattern first
-            if (element.Patterns.Value.IsSupported)
+        if (element.Patterns.Value.IsSupported)
+        {
+            var valuePattern = element.Patterns.Value.Pattern;
+            if (!valuePattern.IsReadOnly.ValueOrDefault)
             {
-                var valuePattern = element.Patterns.Value.Pattern;
-                if (!valuePattern.IsReadOnly.ValueOrDefault)
-                {
-                    valuePattern.SetValue(value);
-                    return Task.FromResult(TextResult($"Filled {elementName} with \"{value}\""));
-                }
+                valuePattern.SetValue(value);
+                return $"Filled {elementName} with \"{value}\"";
             }
-
-            // Fall back to focus + select all + type
-            element.Focus();
-            Thread.Sleep(50);
-            Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
-            Thread.Sleep(50);
-            Keyboard.Type(value);
-
-            return Task.FromResult(TextResult($"Filled {elementName} with \"{value}\""));
         }
-        catch (Exception ex)
-        {
-            return Task.FromResult(ErrorResult($"Failed to fill {refId}: {ex.Message}"));
-        }
+
+        // Fallback: focus + Ctrl+A + type
+        element.Focus();
+        Thread.Sleep(50);
+        Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
+        Thread.Sleep(50);
+        Keyboard.Type(value);
+        return $"Filled {elementName} with \"{value}\"";
     }
 }

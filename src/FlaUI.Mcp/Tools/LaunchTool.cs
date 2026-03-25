@@ -1,12 +1,11 @@
-using System.Text.Json;
 using FlaUI.Mcp.Core;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 
 namespace FlaUI.Mcp.Tools;
 
-/// <summary>
-/// Launch a Windows application
-/// </summary>
-public class LaunchTool : ToolBase
+[McpServerToolType]
+public class LaunchTool
 {
     private readonly SessionManager _sessionManager;
 
@@ -15,49 +14,16 @@ public class LaunchTool : ToolBase
         _sessionManager = sessionManager;
     }
 
-    public override string Name => "windows_launch";
-
-    public override string Description => 
-        "Launch a Windows application. Returns a window handle for use with other tools.";
-
-    public override object InputSchema => new
+    [McpServerTool(Name = "windows_launch"), Description(
+        "Launch a Windows application. Returns a window handle for use with other tools.")]
+    public string Execute(
+        [Description("Path to executable or UWP app ID (e.g., 'calc.exe', 'notepad.exe', 'C:\\\\Program Files\\\\MyApp\\\\app.exe')")] string app,
+        [Description("Optional command line arguments")] string[]? args = null)
     {
-        type = "object",
-        properties = new
-        {
-            app = new
-            {
-                type = "string",
-                description = "Path to executable or UWP app ID (e.g., 'calc.exe', 'notepad.exe', 'C:\\\\Program Files\\\\MyApp\\\\app.exe')"
-            },
-            args = new
-            {
-                type = "array",
-                items = new { type = "string" },
-                description = "Optional command line arguments"
-            }
-        },
-        required = new[] { "app" }
-    };
-
-    public override Task<McpToolResult> ExecuteAsync(JsonElement? arguments)
-    {
-        var app = GetStringArgument(arguments, "app");
         if (string.IsNullOrEmpty(app))
-        {
-            return Task.FromResult(ErrorResult("Missing required argument: app"));
-        }
+            throw new InvalidOperationException("Missing required argument: app");
 
-        var args = GetArgument<string[]>(arguments, "args");
-
-        try
-        {
-            var (handle, window) = _sessionManager.LaunchApp(app, args);
-            return Task.FromResult(TextResult($"Launched {app}\nWindow handle: {handle}\nTitle: {window.Title}"));
-        }
-        catch (Exception ex)
-        {
-            return Task.FromResult(ErrorResult($"Failed to launch {app}: {ex.Message}"));
-        }
+        var (handle, window) = _sessionManager.LaunchApp(app, args);
+        return $"Launched {app}\nWindow handle: {handle}\nTitle: {window.Title}";
     }
 }

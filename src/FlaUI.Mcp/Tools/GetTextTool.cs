@@ -1,81 +1,37 @@
-using System.Text.Json;
 using FlaUI.Mcp.Core;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 
 namespace FlaUI.Mcp.Tools;
 
-/// <summary>
-/// Get text content of an element
-/// </summary>
-public class GetTextTool : ToolBase
+[McpServerToolType]
+public class GetTextTool
 {
     private readonly ElementRegistry _elementRegistry;
 
-    public GetTextTool(ElementRegistry elementRegistry)
-    {
-        _elementRegistry = elementRegistry;
-    }
+    public GetTextTool(ElementRegistry elementRegistry) { _elementRegistry = elementRegistry; }
 
-    public override string Name => "windows_get_text";
-
-    public override string Description => 
+    [McpServerTool(Name = "windows_get_text"), Description(
         "Get the text content of an element. Returns the element's Name property, " +
-        "or for text inputs, the current value.";
-
-    public override object InputSchema => new
+        "or for text inputs, the current value.")]
+    public string Execute(
+        [Description("Element ref from windows_snapshot (e.g., 'w1e5')")] string @ref)
     {
-        type = "object",
-        properties = new
-        {
-            @ref = new
-            {
-                type = "string",
-                description = "Element ref from windows_snapshot (e.g., 'w1e5')"
-            }
-        },
-        required = new[] { "ref" }
-    };
-
-    public override Task<McpToolResult> ExecuteAsync(JsonElement? arguments)
-    {
-        var refId = GetStringArgument(arguments, "ref");
-        if (string.IsNullOrEmpty(refId))
-        {
-            return Task.FromResult(ErrorResult("Missing required argument: ref"));
-        }
-
-        var element = _elementRegistry.GetElement(refId);
+        var element = _elementRegistry.GetElement(@ref);
         if (element == null)
-        {
-            return Task.FromResult(ErrorResult($"Element not found: {refId}. Run windows_snapshot to refresh element refs."));
-        }
+            throw new InvalidOperationException($"Element not found: {@ref}. Run windows_snapshot to refresh element refs.");
 
-        try
-        {
-            string? text = null;
+        string? text = null;
 
-            // Try Value pattern first (for text inputs)
-            if (element.Patterns.Value.IsSupported)
-            {
-                text = element.Patterns.Value.Pattern.Value.ValueOrDefault;
-            }
+        if (element.Patterns.Value.IsSupported)
+            text = element.Patterns.Value.Pattern.Value.ValueOrDefault;
 
-            // Fall back to Name property
-            if (string.IsNullOrEmpty(text))
-            {
-                text = element.Properties.Name.ValueOrDefault;
-            }
+        if (string.IsNullOrEmpty(text))
+            text = element.Properties.Name.ValueOrDefault;
 
-            // Try Text pattern
-            if (string.IsNullOrEmpty(text) && element.Patterns.Text.IsSupported)
-            {
-                text = element.Patterns.Text.Pattern.DocumentRange.GetText(-1);
-            }
+        if (string.IsNullOrEmpty(text) && element.Patterns.Text.IsSupported)
+            text = element.Patterns.Text.Pattern.DocumentRange.GetText(-1);
 
-            return Task.FromResult(TextResult(text ?? ""));
-        }
-        catch (Exception ex)
-        {
-            return Task.FromResult(ErrorResult($"Failed to get text from {refId}: {ex.Message}"));
-        }
+        return text ?? "";
     }
 }

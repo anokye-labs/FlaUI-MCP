@@ -1,15 +1,15 @@
-using System.Text.Json;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
 using FlaUI.Mcp.Core;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
+using System.Text.Json;
 
 namespace FlaUI.Mcp.Tools;
 
-/// <summary>
-/// Execute multiple actions in a single call for better performance
-/// </summary>
-public class BatchTool : ToolBase
+[McpServerToolType]
+public class BatchTool
 {
     private readonly SessionManager _sessionManager;
     private readonly ElementRegistry _elementRegistry;
@@ -22,87 +22,20 @@ public class BatchTool : ToolBase
         _snapshotBuilder = new SnapshotBuilder(elementRegistry);
     }
 
-    public override string Name => "windows_batch";
-
-    public override string Description => 
+    [McpServerTool(Name = "windows_batch"), Description(
         "Execute multiple actions in a single call. Much faster than individual calls. " +
-        "Supports click, type, fill, and wait actions. Returns results for each action.";
-
-    public override object InputSchema => new
+        "Supports click, type, fill, wait, and snapshot actions. Returns results for each action.")]
+    public string Execute(
+        [Description("List of actions to execute in order (click/type/fill/wait/snapshot)")] JsonElement actions,
+        [Description("Stop executing if an action fails (default: true)")] bool stopOnError = true)
     {
-        type = "object",
-        properties = new
-        {
-            actions = new
-            {
-                type = "array",
-                description = "List of actions to execute in order",
-                items = new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        action = new
-                        {
-                            type = "string",
-                            @enum = new[] { "click", "type", "fill", "wait", "snapshot" },
-                            description = "Action type"
-                        },
-                        @ref = new
-                        {
-                            type = "string",
-                            description = "Element ref for click/type/fill actions"
-                        },
-                        text = new
-                        {
-                            type = "string",
-                            description = "Text for type action"
-                        },
-                        value = new
-                        {
-                            type = "string",
-                            description = "Value for fill action"
-                        },
-                        ms = new
-                        {
-                            type = "integer",
-                            description = "Milliseconds for wait action (default: 100)"
-                        },
-                        handle = new
-                        {
-                            type = "string",
-                            description = "Window handle for snapshot action"
-                        }
-                    },
-                    required = new[] { "action" }
-                }
-            },
-            stopOnError = new
-            {
-                type = "boolean",
-                description = "Stop executing if an action fails (default: true)"
-            }
-        },
-        required = new[] { "actions" }
-    };
-
-    public override Task<McpToolResult> ExecuteAsync(JsonElement? arguments)
-    {
-        if (arguments == null || !arguments.Value.TryGetProperty("actions", out var actionsElement))
-        {
-            return Task.FromResult(ErrorResult("Missing required argument: actions"));
-        }
-
-        var stopOnError = true;
-        if (arguments.Value.TryGetProperty("stopOnError", out var stopProp))
-        {
-            stopOnError = stopProp.GetBoolean();
-        }
+        if (actions.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("actions must be a JSON array");
 
         var results = new List<string>();
-        var actions = actionsElement.EnumerateArray().ToList();
+        var actionList = actions.EnumerateArray().ToList();
 
-        foreach (var (actionObj, index) in actions.Select((a, i) => (a, i)))
+        foreach (var (actionObj, index) in actionList.Select((a, i) => (a, i)))
         {
             try
             {
@@ -129,40 +62,31 @@ public class BatchTool : ToolBase
             }
         }
 
-        return Task.FromResult(TextResult(string.Join("\n", results)));
+        return string.Join("\n", results);
     }
 
     private string ExecuteClick(JsonElement action)
     {
         var refId = action.TryGetProperty("ref", out var refProp) ? refProp.GetString() : null;
-        if (string.IsNullOrEmpty(refId))
-        {
-            return "Missing ref";
-        }
+        if (string.IsNullOrEmpty(refId)) return "Missing ref";
 
         var element = _elementRegistry.GetElement(refId);
-        if (element == null)
-        {
-            return $"Element not found: {refId}";
-        }
+        if (element == null) return $"Element not found: {refId}";
 
         var elementName = element.Properties.Name.ValueOrDefault ?? refId;
 
-        // Try Invoke pattern first
         if (element.Patterns.Invoke.IsSupported)
         {
             element.Patterns.Invoke.Pattern.Invoke();
             return $"Invoked {elementName}";
         }
 
-        // Try Toggle pattern
         if (element.Patterns.Toggle.IsSupported)
         {
             element.Patterns.Toggle.Pattern.Toggle();
             return $"Toggled {elementName}";
         }
 
-        // Fall back to mouse click
         var clickPoint = element.GetClickablePoint();
         Mouse.Click(clickPoint);
         return $"Clicked {elementName}";
@@ -171,19 +95,13 @@ public class BatchTool : ToolBase
     private string ExecuteType(JsonElement action)
     {
         var text = action.TryGetProperty("text", out var textProp) ? textProp.GetString() : null;
-        if (string.IsNullOrEmpty(text))
-        {
-            return "Missing text";
-        }
+        if (string.IsNullOrEmpty(text)) return "Missing text";
 
         var refId = action.TryGetProperty("ref", out var refProp) ? refProp.GetString() : null;
         if (!string.IsNullOrEmpty(refId))
         {
             var element = _elementRegistry.GetElement(refId);
-            if (element == null)
-            {
-                return $"Element not found: {refId}";
-            }
+            if (element == null) return $"Element not found: {refId}";
             element.Focus();
             Thread.Sleep(30);
         }
@@ -197,16 +115,10 @@ public class BatchTool : ToolBase
         var refId = action.TryGetProperty("ref", out var refProp) ? refProp.GetString() : null;
         var value = action.TryGetProperty("value", out var valProp) ? valProp.GetString() : null;
 
-        if (string.IsNullOrEmpty(refId) || value == null)
-        {
-            return "Missing ref or value";
-        }
+        if (string.IsNullOrEmpty(refId) || value == null) return "Missing ref or value";
 
         var element = _elementRegistry.GetElement(refId);
-        if (element == null)
-        {
-            return $"Element not found: {refId}";
-        }
+        if (element == null) return $"Element not found: {refId}";
 
         if (element.Patterns.Value.IsSupported)
         {
@@ -214,7 +126,6 @@ public class BatchTool : ToolBase
             return $"Filled with \"{value}\"";
         }
 
-        // Fallback
         element.Focus();
         Thread.Sleep(30);
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
@@ -233,19 +144,15 @@ public class BatchTool : ToolBase
     private string ExecuteSnapshot(JsonElement action)
     {
         var handle = action.TryGetProperty("handle", out var handleProp) ? handleProp.GetString() : null;
-        
+
         Window? window = null;
         if (!string.IsNullOrEmpty(handle))
         {
             window = _sessionManager.GetWindow(handle);
-            if (window == null)
-            {
-                return $"Window not found: {handle}";
-            }
+            if (window == null) return $"Window not found: {handle}";
         }
         else
         {
-            // Get focused window
             var focusedElement = _sessionManager.Automation.FocusedElement();
             if (focusedElement != null)
             {
@@ -263,11 +170,7 @@ public class BatchTool : ToolBase
             }
         }
 
-        if (window == null)
-        {
-            return "No window found";
-        }
-
+        if (window == null) return "No window found";
         var snapshot = _snapshotBuilder.BuildSnapshot(handle!, window);
         return $"\n{snapshot}";
     }

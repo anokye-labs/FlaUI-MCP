@@ -1,13 +1,12 @@
-using System.Text.Json;
 using FlaUI.Core.AutomationElements;
 using FlaUI.Mcp.Core;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 
 namespace FlaUI.Mcp.Tools;
 
-/// <summary>
-/// Take accessibility snapshot of a window - THE KEY TOOL FOR AGENTS
-/// </summary>
-public class SnapshotTool : ToolBase
+[McpServerToolType]
+public class SnapshotTool
 {
     private readonly SessionManager _sessionManager;
     private readonly ElementRegistry _elementRegistry;
@@ -20,78 +19,46 @@ public class SnapshotTool : ToolBase
         _snapshotBuilder = new SnapshotBuilder(elementRegistry);
     }
 
-    public override string Name => "windows_snapshot";
-
-    public override string Description => 
+    [McpServerTool(Name = "windows_snapshot"), Description(
         "Capture accessibility snapshot of a window. Returns a structured tree with element refs " +
         "that can be used with windows_click, windows_type, etc. This is the primary tool for " +
-        "understanding window contents - use it before interacting with elements.";
-
-    public override object InputSchema => new
+        "understanding window contents - use it before interacting with elements.")]
+    public string Execute(
+        [Description("Window handle from windows_launch or windows_list_windows. If omitted, uses the most recently launched window.")] string? handle = null)
     {
-        type = "object",
-        properties = new
+        Window? window = null;
+
+        if (!string.IsNullOrEmpty(handle))
         {
-            handle = new
-            {
-                type = "string",
-                description = "Window handle from windows_launch or windows_list_windows. If omitted, uses the most recently launched window."
-            }
+            window = _sessionManager.GetWindow(handle);
+            if (window == null)
+                throw new InvalidOperationException($"Window not found: {handle}");
         }
-    };
-
-    public override Task<McpToolResult> ExecuteAsync(JsonElement? arguments)
-    {
-        var handle = GetStringArgument(arguments, "handle");
-
-        try
+        else
         {
-            FlaUI.Core.AutomationElements.Window? window = null;
+            var focusedElement = _sessionManager.Automation.FocusedElement();
 
-            if (!string.IsNullOrEmpty(handle))
+            if (focusedElement != null)
             {
-                window = _sessionManager.GetWindow(handle);
-                if (window == null)
+                var current = focusedElement;
+                while (current != null)
                 {
-                    return Task.FromResult(ErrorResult($"Window not found: {handle}"));
-                }
-            }
-            else
-            {
-                // Get the foreground window
-                var desktop = _sessionManager.Automation.GetDesktop();
-                var focusedElement = _sessionManager.Automation.FocusedElement();
-                
-                if (focusedElement != null)
-                {
-                    // Walk up to find the window
-                    var current = focusedElement;
-                    while (current != null)
+                    if (current.Properties.ControlType.ValueOrDefault == FlaUI.Core.Definitions.ControlType.Window)
                     {
-                        if (current.Properties.ControlType.ValueOrDefault == FlaUI.Core.Definitions.ControlType.Window)
-                        {
-                            window = current.AsWindow();
-                            break;
-                        }
-                        current = current.Parent;
+                        window = current.AsWindow();
+                        break;
                     }
+                    current = current.Parent;
                 }
-
-                if (window == null)
-                {
-                    return Task.FromResult(ErrorResult("No window specified and no focused window found. Use windows_list_windows to see available windows."));
-                }
-
-                // Register this window
-                handle = _sessionManager.RegisterWindow(window);
             }
 
-            var snapshot = _snapshotBuilder.BuildSnapshot(handle!, window);
-            return Task.FromResult(TextResult(snapshot));
+            if (window == null)
+                throw new InvalidOperationException("No window specified and no focused window found. Use windows_list_windows to see available windows.");
+
+            handle = _sessionManager.RegisterWindow(window);
         }
-        catch (Exception ex)
-        {
-            return Task.FromResult(ErrorResult($"Failed to capture snapshot: {ex.Message}"));
-        }
+
+        var snapshot = _snapshotBuilder.BuildSnapshot(handle!, window);
+        return snapshot;
     }
 }

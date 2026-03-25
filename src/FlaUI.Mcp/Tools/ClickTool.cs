@@ -1,14 +1,12 @@
-using System.Text.Json;
-using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
 using FlaUI.Mcp.Core;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 
 namespace FlaUI.Mcp.Tools;
 
-/// <summary>
-/// Click an element by ref
-/// </summary>
-public class ClickTool : ToolBase
+[McpServerToolType]
+public class ClickTool
 {
     private readonly ElementRegistry _elementRegistry;
 
@@ -17,104 +15,60 @@ public class ClickTool : ToolBase
         _elementRegistry = elementRegistry;
     }
 
-    public override string Name => "windows_click";
-
-    public override string Description => 
+    [McpServerTool(Name = "windows_click"), Description(
         "Click an element by its ref (from windows_snapshot). Prefers Invoke pattern for reliability, " +
-        "falls back to mouse click if needed.";
-
-    public override object InputSchema => new
+        "falls back to mouse click if needed.")]
+    public string Execute(
+        [Description("Element ref from windows_snapshot (e.g., 'w1e5')")] string @ref,
+        [Description("Mouse button to click (default: left)")] string button = "left",
+        [Description("Whether to double-click (default: false)")] bool doubleClick = false)
     {
-        type = "object",
-        properties = new
-        {
-            @ref = new
-            {
-                type = "string",
-                description = "Element ref from windows_snapshot (e.g., 'w1e5')"
-            },
-            button = new
-            {
-                type = "string",
-                @enum = new[] { "left", "right", "middle" },
-                description = "Mouse button to click (default: left)"
-            },
-            doubleClick = new
-            {
-                type = "boolean",
-                description = "Whether to double-click (default: false)"
-            }
-        },
-        required = new[] { "ref" }
-    };
-
-    public override Task<McpToolResult> ExecuteAsync(JsonElement? arguments)
-    {
-        var refId = GetStringArgument(arguments, "ref");
-        if (string.IsNullOrEmpty(refId))
-        {
-            return Task.FromResult(ErrorResult("Missing required argument: ref"));
-        }
-
-        var button = GetStringArgument(arguments, "button") ?? "left";
-        var doubleClick = GetBoolArgument(arguments, "doubleClick", false);
-
-        var element = _elementRegistry.GetElement(refId);
+        var element = _elementRegistry.GetElement(@ref);
         if (element == null)
+            throw new InvalidOperationException($"Element not found: {@ref}. Run windows_snapshot to refresh element refs.");
+
+        var elementName = element.Properties.Name.ValueOrDefault ?? @ref;
+
+        // Try Invoke pattern first (most reliable for buttons)
+        if (button == "left" && !doubleClick && element.Patterns.Invoke.IsSupported)
         {
-            return Task.FromResult(ErrorResult($"Element not found: {refId}. Run windows_snapshot to refresh element refs."));
+            element.Patterns.Invoke.Pattern.Invoke();
+            return $"Invoked {elementName}";
         }
 
-        try
+        // Try Toggle pattern for checkboxes
+        if (button == "left" && !doubleClick && element.Patterns.Toggle.IsSupported)
         {
-            var elementName = element.Properties.Name.ValueOrDefault ?? refId;
-
-            // Try Invoke pattern first (most reliable for buttons)
-            if (button == "left" && !doubleClick && element.Patterns.Invoke.IsSupported)
-            {
-                element.Patterns.Invoke.Pattern.Invoke();
-                return Task.FromResult(TextResult($"Invoked {elementName}"));
-            }
-
-            // Try Toggle pattern for checkboxes
-            if (button == "left" && !doubleClick && element.Patterns.Toggle.IsSupported)
-            {
-                element.Patterns.Toggle.Pattern.Toggle();
-                var newState = element.Patterns.Toggle.Pattern.ToggleState.ValueOrDefault;
-                return Task.FromResult(TextResult($"Toggled {elementName} to {newState}"));
-            }
-
-            // Try SelectionItem pattern for list items
-            if (button == "left" && !doubleClick && element.Patterns.SelectionItem.IsSupported)
-            {
-                element.Patterns.SelectionItem.Pattern.Select();
-                return Task.FromResult(TextResult($"Selected {elementName}"));
-            }
-
-            // Fall back to mouse click
-            var clickPoint = element.GetClickablePoint();
-            
-            var mouseButton = button switch
-            {
-                "right" => MouseButton.Right,
-                "middle" => MouseButton.Middle,
-                _ => MouseButton.Left
-            };
-
-            if (doubleClick)
-            {
-                Mouse.DoubleClick(clickPoint, mouseButton);
-                return Task.FromResult(TextResult($"Double-clicked {elementName}"));
-            }
-            else
-            {
-                Mouse.Click(clickPoint, mouseButton);
-                return Task.FromResult(TextResult($"Clicked {elementName}"));
-            }
+            element.Patterns.Toggle.Pattern.Toggle();
+            var newState = element.Patterns.Toggle.Pattern.ToggleState.ValueOrDefault;
+            return $"Toggled {elementName} to {newState}";
         }
-        catch (Exception ex)
+
+        // Try SelectionItem pattern for list items
+        if (button == "left" && !doubleClick && element.Patterns.SelectionItem.IsSupported)
         {
-            return Task.FromResult(ErrorResult($"Failed to click {refId}: {ex.Message}"));
+            element.Patterns.SelectionItem.Pattern.Select();
+            return $"Selected {elementName}";
+        }
+
+        // Fall back to mouse click
+        var clickPoint = element.GetClickablePoint();
+        var mouseButton = button switch
+        {
+            "right" => MouseButton.Right,
+            "middle" => MouseButton.Middle,
+            _ => MouseButton.Left
+        };
+
+        if (doubleClick)
+        {
+            Mouse.DoubleClick(clickPoint, mouseButton);
+            return $"Double-clicked {elementName}";
+        }
+        else
+        {
+            Mouse.Click(clickPoint, mouseButton);
+            return $"Clicked {elementName}";
         }
     }
 }
