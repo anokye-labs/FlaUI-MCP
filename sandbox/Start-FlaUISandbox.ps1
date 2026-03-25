@@ -83,10 +83,10 @@ while ($attempt -lt $maxAttempts -and -not $ready) {
         }
     }
     catch {
-        # Connection refused or timeout — server not ready yet
+        # Connection refused or timeout - server not ready yet
     }
     if (-not $ready) {
-        Write-Host "  Attempt $attempt/$maxAttempts — not ready yet..."
+        Write-Host "  Attempt $attempt/$maxAttempts - not ready yet..."
         Start-Sleep -Seconds 2
     }
 }
