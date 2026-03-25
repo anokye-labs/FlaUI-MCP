@@ -1,5 +1,4 @@
 using FlaUI.Core.AutomationElements;
-using FlaUI.Core.Definitions;
 using FlaUI.Core.Input;
 using FlaUI.Core.WindowsAPI;
 using FlaUI.Mcp.Core;
@@ -75,18 +74,25 @@ public class BatchTool
 
         var elementName = element.Properties.Name.ValueOrDefault ?? refId;
 
-        // Try Invoke pattern first
+        // Try Invoke pattern first (most reliable for buttons)
         if (element.Patterns.Invoke.IsSupported)
         {
             element.Patterns.Invoke.Pattern.Invoke();
             return $"Invoked {elementName}";
         }
 
-        // Try Toggle pattern
+        // Try Toggle pattern for checkboxes
         if (element.Patterns.Toggle.IsSupported)
         {
             element.Patterns.Toggle.Pattern.Toggle();
             return $"Toggled {elementName}";
+        }
+
+        // Try SelectionItem pattern for list items — mirrors ClickTool behavior
+        if (element.Patterns.SelectionItem.IsSupported)
+        {
+            element.Patterns.SelectionItem.Pattern.Select();
+            return $"Selected {elementName}";
         }
 
         // Fall back to mouse click
@@ -108,7 +114,7 @@ public class BatchTool
             if (element == null)
                 return $"Element not found: {refId}";
             element.Focus();
-            Thread.Sleep(30);
+            Thread.Sleep(50);
         }
 
         Keyboard.Type(text);
@@ -127,17 +133,22 @@ public class BatchTool
         if (element == null)
             return $"Element not found: {refId}";
 
+        // Try Value pattern first — check read-only before writing, mirrors FillTool behavior
         if (element.Patterns.Value.IsSupported)
         {
-            element.Patterns.Value.Pattern.SetValue(value);
-            return $"Filled with \"{value}\"";
+            var valuePattern = element.Patterns.Value.Pattern;
+            if (!valuePattern.IsReadOnly.ValueOrDefault)
+            {
+                valuePattern.SetValue(value);
+                return $"Filled with \"{value}\"";
+            }
         }
 
         // Fallback: select all + type
         element.Focus();
-        Thread.Sleep(30);
+        Thread.Sleep(50);
         Keyboard.TypeSimultaneously(VirtualKeyShort.CONTROL, VirtualKeyShort.KEY_A);
-        Thread.Sleep(30);
+        Thread.Sleep(50);
         Keyboard.Type(value);
         return $"Filled with \"{value}\"";
     }
@@ -162,22 +173,10 @@ public class BatchTool
         }
         else
         {
-            // Get focused window
-            var focusedElement = _sessionManager.Automation.FocusedElement();
-            if (focusedElement != null)
-            {
-                var current = focusedElement;
-                while (current != null)
-                {
-                    if (current.Properties.ControlType.ValueOrDefault == ControlType.Window)
-                    {
-                        window = current.AsWindow();
-                        handle = _sessionManager.RegisterWindow(window);
-                        break;
-                    }
-                    current = current.Parent;
-                }
-            }
+            // Delegate to shared walk-up utility on SessionManager
+            window = _sessionManager.GetWindowForFocusedElement();
+            if (window != null)
+                handle = _sessionManager.RegisterWindow(window);
         }
 
         if (window == null)

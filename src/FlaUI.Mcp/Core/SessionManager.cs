@@ -1,5 +1,6 @@
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
+using FlaUI.Core.Definitions;
 using FlaUI.UIA3;
 using FlaUIApplication = FlaUI.Core.Application;
 
@@ -21,6 +22,27 @@ public class SessionManager : IDisposable
     }
 
     public UIA3Automation Automation => _automation;
+
+    /// <summary>
+    /// Walks up the focused element's ancestor chain to find the nearest Window.
+    /// Returns null when no element is focused or no window ancestor exists.
+    /// Used by SnapshotTool, ScreenshotTool, and BatchTool to avoid duplicating
+    /// the walk-up loop.
+    /// </summary>
+    public Window? GetWindowForFocusedElement()
+    {
+        var focused = _automation.FocusedElement();
+        if (focused == null) return null;
+
+        var current = focused;
+        while (current != null)
+        {
+            if (current.Properties.ControlType.ValueOrDefault == ControlType.Window)
+                return current.AsWindow();
+            current = current.Parent;
+        }
+        return null;
+    }
 
     public (string handle, Window window) LaunchApp(string appPath, string[]? args = null)
     {
@@ -172,6 +194,7 @@ public class SessionManager : IDisposable
         window.Close();
         _windows.Remove(handle);
     }
+
 
     public void Dispose()
     {

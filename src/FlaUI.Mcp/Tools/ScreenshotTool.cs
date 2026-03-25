@@ -1,5 +1,4 @@
 using FlaUI.Core.Capturing;
-using FlaUI.Core.Definitions;
 using FlaUI.Mcp.Core;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -52,23 +51,13 @@ public class ScreenshotTool
         }
         else
         {
-            // Capture foreground window
-            var focusedElement = _sessionManager.Automation.FocusedElement();
-            if (focusedElement == null)
+            // Delegate to shared walk-up utility on SessionManager
+            var window = _sessionManager.GetWindowForFocusedElement();
+            if (window == null)
                 throw new InvalidOperationException("No focused window found");
 
-            // Walk up to find the window
-            var current = focusedElement;
-            while (current != null && current.Properties.ControlType.ValueOrDefault != ControlType.Window)
-            {
-                current = current.Parent;
-            }
-
-            if (current == null)
-                throw new InvalidOperationException("Could not find window for focused element");
-
 #pragma warning disable CS0618
-            capture = Capture.Element(current);
+            capture = Capture.Element(window);
 #pragma warning restore CS0618
         }
 

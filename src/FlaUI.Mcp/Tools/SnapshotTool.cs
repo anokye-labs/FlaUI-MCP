@@ -1,5 +1,4 @@
 using FlaUI.Core.AutomationElements;
-using FlaUI.Core.Definitions;
 using FlaUI.Mcp.Core;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -37,23 +36,8 @@ public class SnapshotTool
         }
         else
         {
-            // Get the foreground/focused window
-            var focusedElement = _sessionManager.Automation.FocusedElement();
-
-            if (focusedElement != null)
-            {
-                // Walk up to find the window
-                var current = focusedElement;
-                while (current != null)
-                {
-                    if (current.Properties.ControlType.ValueOrDefault == ControlType.Window)
-                    {
-                        window = current.AsWindow();
-                        break;
-                    }
-                    current = current.Parent;
-                }
-            }
+            // Delegate to shared walk-up utility on SessionManager
+            window = _sessionManager.GetWindowForFocusedElement();
 
             if (window == null)
                 throw new InvalidOperationException(
