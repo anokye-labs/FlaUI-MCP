@@ -1,3 +1,4 @@
+using FlaUI.Mcp;
 using FlaUI.Mcp.Core;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,7 +7,10 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.Server;
 
-var port = ParsePort(args);
+const string McpServerName = "windows-automation";
+const string McpServerVersion = "0.1.0";
+
+var port = CliArgs.ParsePort(args);
 
 if (port.HasValue)
 {
@@ -16,7 +20,7 @@ if (port.HasValue)
     builder.Services
         .AddMcpServer(options =>
         {
-            options.ServerInfo = new() { Name = "windows-automation", Version = "0.1.0" };
+            options.ServerInfo = new() { Name = McpServerName, Version = McpServerVersion };
         })
         .WithHttpTransport()
         .WithToolsFromAssembly();
@@ -38,7 +42,7 @@ else
     builder.Services
         .AddMcpServer(options =>
         {
-            options.ServerInfo = new() { Name = "windows-automation", Version = "0.1.0" };
+            options.ServerInfo = new() { Name = McpServerName, Version = McpServerVersion };
         })
         .WithStdioServerTransport()
         .WithToolsFromAssembly();
@@ -47,16 +51,6 @@ else
 }
 
 // --- Helper functions ---
-
-static int? ParsePort(string[] args)
-{
-    for (int i = 0; i < args.Length - 1; i++)
-    {
-        if (args[i] == "--port" && int.TryParse(args[i + 1], out var port))
-            return port;
-    }
-    return null;
-}
 
 static void RegisterCoreServices(IServiceCollection services)
 {
