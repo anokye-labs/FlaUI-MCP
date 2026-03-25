@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace PlaywrightWindows.Mcp;
+namespace FlaUI.Mcp;
 
 /// <summary>
 /// MCP Protocol message types and JSON-RPC handling
@@ -64,7 +64,7 @@ public record JsonRpcError
 public record McpServerInfo
 {
     [JsonPropertyName("name")]
-    public string Name { get; init; } = "playwright-windows";
+    public string Name { get; init; } = "windows-automation";
     
     [JsonPropertyName("version")]
     public string Version { get; init; } = "0.1.0";
