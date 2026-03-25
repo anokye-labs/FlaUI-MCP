@@ -1,41 +1,65 @@
-using FlaUI.Mcp;
 using FlaUI.Mcp.Core;
-using FlaUI.Mcp.Tools;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.AspNetCore;
+using ModelContextProtocol.Server;
 
-// Create shared services
-var sessionManager = new SessionManager();
-var elementRegistry = new ElementRegistry();
+var port = ParsePort(args);
 
-// Register all tools
-var toolRegistry = new ToolRegistry();
-toolRegistry.RegisterTool(new LaunchTool(sessionManager));
-toolRegistry.RegisterTool(new SnapshotTool(sessionManager, elementRegistry));
-toolRegistry.RegisterTool(new ClickTool(elementRegistry));
-toolRegistry.RegisterTool(new TypeTool(elementRegistry));
-toolRegistry.RegisterTool(new FillTool(elementRegistry));
-toolRegistry.RegisterTool(new GetTextTool(elementRegistry));
-toolRegistry.RegisterTool(new ScreenshotTool(sessionManager, elementRegistry));
-toolRegistry.RegisterTool(new ListWindowsTool(sessionManager));
-toolRegistry.RegisterTool(new FocusWindowTool(sessionManager));
-toolRegistry.RegisterTool(new CloseWindowTool(sessionManager));
-toolRegistry.RegisterTool(new BatchTool(sessionManager, elementRegistry));
-
-// Create and run MCP server
-var server = new McpServer(toolRegistry);
-
-using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) =>
+if (port.HasValue)
 {
-    e.Cancel = true;
-    cts.Cancel();
-};
+    // HTTP mode — used inside Windows Sandbox or other remote environments
+    var builder = WebApplication.CreateBuilder(args);
+    RegisterCoreServices(builder.Services);
+    builder.Services
+        .AddMcpServer(options =>
+        {
+            options.ServerInfo = new() { Name = "windows-automation", Version = "0.1.0" };
+        })
+        .WithHttpTransport()
+        .WithToolsFromAssembly();
 
-try
-{
-    await server.RunAsync(cts.Token);
+    var app = builder.Build();
+    app.MapMcp();
+    Console.Error.WriteLine($"FlaUI-MCP starting in HTTP mode on port {port.Value}");
+    app.Run($"http://0.0.0.0:{port.Value}");
 }
-finally
+else
 {
-    sessionManager.Dispose();
+    // Stdio mode — default, backward-compatible with existing mcp.json configs
+    var builder = Host.CreateApplicationBuilder(args);
+    builder.Logging.AddConsole(consoleLogOptions =>
+    {
+        consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
+    });
+    RegisterCoreServices(builder.Services);
+    builder.Services
+        .AddMcpServer(options =>
+        {
+            options.ServerInfo = new() { Name = "windows-automation", Version = "0.1.0" };
+        })
+        .WithStdioServerTransport()
+        .WithToolsFromAssembly();
+
+    await builder.Build().RunAsync();
 }
 
+// --- Helper functions ---
+
+static int? ParsePort(string[] args)
+{
+    for (int i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--port" && int.TryParse(args[i + 1], out var port))
+            return port;
+    }
+    return null;
+}
+
+static void RegisterCoreServices(IServiceCollection services)
+{
+    services.AddSingleton<SessionManager>();
+    services.AddSingleton<ElementRegistry>();
+}
