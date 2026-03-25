@@ -17,7 +17,7 @@
 #>
 param(
     [int]$Port = 8765,
-    [string]$McpJsonPath = (Join-Path $env:USERPROFILE ".amplifier" "mcp.json"),
+    [string]$McpJsonPath = (Join-Path (Join-Path $env:USERPROFILE ".amplifier") "mcp.json"),
     [switch]$SkipPublish
 )
 

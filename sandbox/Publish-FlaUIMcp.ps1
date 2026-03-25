@@ -7,11 +7,11 @@
 #>
 param(
     [string]$Configuration = "Release",
-    [string]$OutputDir = (Join-Path $PSScriptRoot ".." "publish")
+    [string]$OutputDir = (Join-Path (Join-Path $PSScriptRoot "..") "publish")
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectDir = Join-Path $PSScriptRoot ".." "src" "FlaUI.Mcp"
+$ProjectDir = Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "src") "FlaUI.Mcp"
 
 Write-Host "Publishing FlaUI-MCP (self-contained, win-x64)..."
 Write-Host "  Project: $ProjectDir"

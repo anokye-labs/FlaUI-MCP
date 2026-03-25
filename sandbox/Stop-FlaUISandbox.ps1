@@ -5,7 +5,7 @@
     Path to Amplifier's mcp.json. Default: ~/.amplifier/mcp.json.
 #>
 param(
-    [string]$McpJsonPath = (Join-Path $env:USERPROFILE ".amplifier" "mcp.json")
+    [string]$McpJsonPath = (Join-Path (Join-Path $env:USERPROFILE ".amplifier") "mcp.json")
 )
 
 $ErrorActionPreference = "Stop"
