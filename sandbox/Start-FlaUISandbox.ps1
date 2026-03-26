@@ -54,9 +54,36 @@ $sandboxResult = wsb start --config $wsbConfig --raw | ConvertFrom-Json
 $sandboxId = $sandboxResult.Id
 Write-Host "Sandbox started with ID: $sandboxId"
 
-# Step 3: Launch FlaUI-MCP inside sandbox
-Write-Host "Launching FlaUI-MCP on port $Port inside sandbox..."
-wsb exec --id $sandboxId -c "C:\FlaUI-MCP\FlaUI.Mcp.exe --port $Port" -r ExistingLogin
+# Step 3: Wait for sandbox user session and launch FlaUI-MCP
+Write-Host "Waiting for sandbox user session to be ready..."
+$execMaxAttempts = 15
+$execAttempt = 0
+$execSuccess = $false
+
+while ($execAttempt -lt $execMaxAttempts -and -not $execSuccess) {
+    $execAttempt++
+    try {
+        $execResult = wsb exec --id $sandboxId -c "C:\FlaUI-MCP\FlaUI.Mcp.exe --port $Port" -r ExistingLogin 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $execSuccess = $true
+            Write-Host "FlaUI-MCP launched inside sandbox"
+        } else {
+            Write-Host "  Attempt $execAttempt/$execMaxAttempts - sandbox not ready yet..."
+            Start-Sleep -Seconds 3
+        }
+    }
+    catch {
+        Write-Host "  Attempt $execAttempt/$execMaxAttempts - sandbox not ready yet..."
+        Start-Sleep -Seconds 3
+    }
+}
+
+if (-not $execSuccess) {
+    Write-Error "Failed to launch FlaUI-MCP inside sandbox after $execMaxAttempts attempts."
+    Write-Host "Stopping sandbox..."
+    try { wsb stop --id $sandboxId } catch { }
+    exit 1
+}
 
 # Step 4: Get sandbox IP
 $ipResult = wsb ip --id $sandboxId --raw | ConvertFrom-Json
